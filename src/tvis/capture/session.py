@@ -439,7 +439,7 @@ class Session:
                     "flags": batch.flags + ([] if batch.has_backward else ["no_backward"]),
                     "timing": self._batch_timing(batch, end),
                     "calls": calls_json,
-                    "tensors": {r.tid: r.to_json(self.timer.ms) for r in records},
+                    "tensors": {r.tid: r.to_json(self.timer.corrected_ms) for r in records},
                     "ops": batch.ops,
                     "samples": samples,
                 },
@@ -466,7 +466,7 @@ class Session:
             "total_ms": sum(phases.values()),
             "wall_phases_ms": wall,
             "wall_total_ms": (end.wall - batch.start.wall) * 1000.0,
-            "start_ms": self.timer.ms(batch.start),
+            "start_ms": self.timer.corrected_ms(batch.start),
         }
 
     def _infer_batch_size(self, batch: Batch, by_tid: dict[str, TensorRecord]) -> int | None:

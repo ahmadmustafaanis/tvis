@@ -73,14 +73,26 @@ class Api:
         return {"tid": tid, "grad": bool(grad), "sample": sample, **views.tensor_view(array, fixed=fixed)}
 
     def _image(
-        self, run: str, batch: int, tid: str, grad: bool = False, sample: int | None = None
+        self,
+        run: str,
+        batch: int,
+        tid: str,
+        grad: bool = False,
+        sample: int | None = None,
+        unnormalize: bool | None = None,
     ) -> dict[str, Any]:
+        """``unnormalize``: apply the inverse of the pipeline's Normalize. By default only to tensors
+        that were normalised: a Normalize output, the collated batch, or anything in the model."""
         r = self.root.run(run)
         meta = self._tensor_meta(r, int(batch), tid)
         array = r.array(int(batch), tid, grad=bool(grad))
         if sample is not None:
             array = views.select_sample(array, meta, int(sample), grad=bool(grad))
-        normalize = r.meta().get("data", {}).get("normalize")
+        if unnormalize is None:
+            unnormalize = bool(
+                meta.get("normalized") or meta.get("batch_dim") or meta.get("phase") not in ("data", None)
+            )
+        normalize = r.meta().get("data", {}).get("normalize") if unnormalize else None
         return views.image_view(array, kind=meta.get("kind", "tensor"), normalize=normalize, grad=bool(grad))
 
     def _tensor_meta(self, run: Any, batch: int, tid: str) -> dict[str, Any]:

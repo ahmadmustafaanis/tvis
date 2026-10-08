@@ -24,6 +24,7 @@ from torch.utils.data import DataLoader
 
 from tvis.capture import calls as K
 from tvis.capture.session import functools_wraps
+from tvis.capture.values import iter_tensor_refs
 
 if TYPE_CHECKING:
     from tvis.capture.session import Session
@@ -180,6 +181,11 @@ class DataInstrumentation:
         finally:
             s._tl.suppress_modules -= 1
         s.close_call(call, outputs=[("output", out)], hook_grad=False)
+        if call is not None and type(transform).__name__ == "Normalize":
+            for ref in iter_tensor_refs(call.outputs[0]["value"]):
+                record = s.registry.records.get(ref["tid"])
+                if record is not None:
+                    record.normalized = True
         return out
 
     def _remember_normalize(self, transform: Any) -> None:

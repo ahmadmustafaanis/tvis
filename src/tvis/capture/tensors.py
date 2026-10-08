@@ -41,6 +41,7 @@ class TensorRecord:
     grad_arrival: Mark | None = None
     batch_dim: dict[str, Any] | None = None
     phase: str | None = None
+    normalized: bool = False  # produced by a Normalize transform (the viewer un-normalises it)
     value: torch.Tensor | None = field(default=None, repr=False)
     grad: torch.Tensor | None = field(default=None, repr=False)
 
@@ -68,6 +69,8 @@ class TensorRecord:
             doc["grad_arrival_ms"] = ms(self.grad_arrival)
         if self.batch_dim is not None:
             doc["batch_dim"] = self.batch_dim
+        if self.normalized:
+            doc["normalized"] = True
         return doc
 
 

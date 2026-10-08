@@ -1,1 +1,48 @@
-<!doctype html><title>tvis</title>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>tvis</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div id="app">
+    <header class="top">
+      <div class="brand"><span class="logo"></span>tvis</div>
+      <select id="run-select" class="select" title="Run"></select>
+      <div class="seg" id="mode-seg">
+        <button data-mode="batch" class="on">Batch</button>
+        <button data-mode="step">Step</button>
+      </div>
+      <div class="chips" id="index-chips"></div>
+      <div id="follow-slot"></div>
+      <div class="spacer"></div>
+      <button class="icon-btn notices-btn hidden" id="notices-btn" title="Notices">!</button>
+      <button class="icon-btn" id="theme-btn" title="Toggle theme">◐</button>
+    </header>
+    <div class="phasebar" id="phasebar"></div>
+    <main>
+      <section class="panel" id="left">
+        <div class="panel-head">
+          <h2 id="left-title">Calls</h2>
+          <input class="search" id="tree-search" placeholder="Filter…" spellcheck="false">
+          <button class="icon-btn" id="hidden-btn" title="Hidden functions">⊘</button>
+        </div>
+        <div class="kind-filters" id="kind-filters"></div>
+        <div class="panel-body"><div class="tree" id="tree"></div></div>
+      </section>
+      <section class="panel" id="center">
+        <div class="panel-head"><div class="tabs" id="tabs"></div></div>
+        <div class="panel-body" id="center-body"></div>
+      </section>
+      <section class="panel" id="right">
+        <div class="panel-head"><div class="insp-title" id="insp-title"><h2>Inspector</h2></div></div>
+        <div class="panel-body" id="inspector"></div>
+      </section>
+    </main>
+  </div>
+  <div class="tooltip hidden" id="tooltip"></div>
+  <script type="module" src="/static/js/app.js"></script>
+</body>
+</html>

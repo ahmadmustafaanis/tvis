@@ -37,6 +37,7 @@ class Timer:
         self._lock = threading.Lock()
         self._regions: list[tuple[Mark, Mark]] = []  # disjoint, ordered by start seq
         self._region_starts: list[int] = []
+        self._region_ends: list[int] = []
         self._region_prefix: list[float] = [0.0]
         self._resolved_upto = 0
         self.base = self.mark()
@@ -83,6 +84,13 @@ class Timer:
         raw = self.ms(end) - self.ms(start)
         return max(0.0, raw - self._overhead_between(start, end))
 
+    def corrected_ms(self, mark: Mark) -> float:
+        """Position of ``mark`` on a timeline with all earlier tvis overhead removed, so positions
+        and durations agree (a parent's bar spans exactly its children plus its own work)."""
+        self._index_regions()
+        done = bisect.bisect_left(self._region_ends, mark.seq)
+        return self.ms(mark) - self._region_prefix[done]
+
     def overhead_total(self) -> float:
         self._index_regions()
         return self._region_prefix[-1]
@@ -102,6 +110,7 @@ class Timer:
                 return
             self._regions.sort(key=lambda r: r[0].seq)
             self._region_starts = [r[0].seq for r in self._regions]
+            self._region_ends = [r[1].seq for r in self._regions]
             prefix = [0.0]
             for s, e in self._regions:
                 prefix.append(prefix[-1] + max(0.0, self.ms(e) - self.ms(s)))

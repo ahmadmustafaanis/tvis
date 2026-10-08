@@ -93,3 +93,17 @@ def test_duration_is_never_negative():
 
 def test_cpu_timer_reports_its_clock_kind():
     assert Timer(record_cuda=False).kind == "perf_counter"
+
+
+def test_corrected_positions_remove_all_earlier_overhead():
+    timer = Timer()
+    a = timer.mark()
+    o0 = timer.mark()
+    spin(0.01)
+    o1 = timer.mark()
+    timer.add_overhead(o0, o1)
+    b = timer.mark()
+
+    assert timer.corrected_ms(a) == pytest.approx(timer.ms(a))
+    assert timer.corrected_ms(b) == pytest.approx(timer.ms(b) - (timer.ms(o1) - timer.ms(o0)))
+    assert timer.corrected_ms(b) - timer.corrected_ms(a) == pytest.approx(timer.duration(a, b))

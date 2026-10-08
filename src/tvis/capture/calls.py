@@ -69,15 +69,15 @@ class Call:
         if self.truncated:
             doc["truncated"] = True
         if self.start is not None and self.end is not None:
-            doc["start_ms"] = timer.ms(self.start)
-            doc["end_ms"] = timer.ms(self.end)
+            doc["start_ms"] = timer.corrected_ms(self.start)
+            doc["end_ms"] = timer.corrected_ms(self.end)
             doc["ms"] = timer.duration(self.start, self.end)
             doc["wall_ms"] = (self.end.wall - self.start.wall) * 1000.0
         bwd = self._backward_window(tensor_arrivals, param_arrivals)
         if bwd is not None:
             start, end = bwd
-            doc["bwd_start_ms"] = timer.ms(start)
-            doc["bwd_end_ms"] = timer.ms(end)
+            doc["bwd_start_ms"] = timer.corrected_ms(start)
+            doc["bwd_end_ms"] = timer.corrected_ms(end)
             doc["bwd_ms"] = timer.duration(start, end)
             doc["bwd_approx"] = True
         return doc

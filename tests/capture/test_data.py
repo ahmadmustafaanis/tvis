@@ -171,6 +171,16 @@ class TestImagePipeline:
         assert normalize["mean"] == pytest.approx([0.5, 0.4, 0.3])
         assert normalize["std"] == pytest.approx([0.2, 0.2, 0.2])
 
+    def test_only_tensors_produced_by_normalize_are_marked_normalized(self, capture, transforms):
+        transform = transforms.Compose(
+            [transforms.Resize((8, 8)), transforms.ToTensor(), transforms.Normalize([0.5] * 3, [0.2] * 3)]
+        )
+        result = capture(self.image_loop(transform))
+
+        to_tensor, normalize = result.children(result.calls(kind="pipeline")[0])[1:]
+        assert "normalized" not in result.tensor(to_tensor["outputs"][0]["value"])
+        assert result.tensor(normalize["outputs"][0]["value"])["normalized"] is True
+
     def test_samples_link_raw_image_to_model_input(self, capture, transforms):
         transform = transforms.Compose([transforms.Resize((8, 8)), transforms.ToTensor()])
         result = capture(self.image_loop(transform))

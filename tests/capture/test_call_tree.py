@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 import torch
 
 from tests.capture import models
@@ -86,6 +87,18 @@ def test_children_time_never_exceeds_parent_time(capture):
         children = [c for c in calls if c["parent"] == parent["id"] and "ms" in c]
         if children and "ms" in parent:
             assert sum(c["ms"] for c in children) <= parent["ms"] * 1.05 + 0.05, parent["name"]
+
+
+def test_children_lie_within_their_parent_on_the_corrected_timeline(capture):
+    result = run_mlp(capture)
+    calls = {c["id"]: c for c in result.batch(0)["calls"]}
+
+    for call in calls.values():
+        parent = calls.get(call["parent"])
+        if parent is None or "start_ms" not in call or "start_ms" not in parent:
+            continue
+        assert parent["start_ms"] - 1e-6 <= call["start_ms"] <= call["end_ms"] <= parent["end_ms"] + 1e-6
+        assert call["end_ms"] - call["start_ms"] == pytest.approx(call["ms"], abs=1e-6)
 
 
 def test_backward_time_is_reported_for_modules_and_functions_and_labelled_approximate(capture):

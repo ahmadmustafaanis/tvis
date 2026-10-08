@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import os
 from pathlib import Path
@@ -50,6 +51,16 @@ def test_image_of_a_normalised_tensor_sample(api: Api):
     image = api.dispatch("image", {"run": RUN_ID, "batch": 0, "tid": "t0", "sample": 0})
 
     assert (image["height"], image["width"]) == (4, 4)
+
+
+def test_batched_tensors_are_unnormalised_by_default_and_can_opt_out(api: Api):
+    params = {"run": RUN_ID, "batch": 0, "tid": "t0", "sample": 0}
+
+    default = api.dispatch("image", params)
+    raw = api.dispatch("image", {**params, "unnormalize": False})
+
+    assert base64.b64decode(default["data"])[0] == 128  # 0 * 0.25 + 0.5 → mid-grey
+    assert base64.b64decode(raw["data"])[0] == 0  # zeros stretched → black
 
 
 def test_image_of_captured_pil_pixels(api: Api):
