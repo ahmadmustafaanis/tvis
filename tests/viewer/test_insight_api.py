@@ -52,6 +52,11 @@ class TestThumbnail:
 
         assert (view["rows"], view["cols"]) == (3, 5) and view["min"] == 0.0
 
+    def test_matrix_layout_flattens_trailing_dims_for_weights(self, api: Api):
+        view = api.dispatch("thumb", {"run": RUN_ID, "batch": 0, "tid": "t1", "layout": "matrix"})
+
+        assert (view["rows"], view["cols"]) == (2, 15)
+
 
 class TestLossDetail:
     def test_per_element_loss_is_laid_out_per_sample(self, api: Api):

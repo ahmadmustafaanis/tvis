@@ -1,9 +1,14 @@
 // Entry point: loads runs/batches, renders the shell, and routes state changes to the views.
 
 import { api } from "./api.js";
+import { attentionLayers, renderAttention } from "./attention.js";
+import { embeddingTables, renderEmbeddings, representationLayers } from "./embeddings.js";
+import { camLayers, renderGradcam } from "./gradcam.js";
 import { renderInspector } from "./inspector.js";
 import { renderLayers } from "./layers.js";
+import { renderLoss } from "./loss.js";
 import { renderOverview } from "./overview.js";
+import { renderReplay, replayKey, stopReplay } from "./replay.js";
 import { renderSamples } from "./samples.js";
 import { renderSource } from "./source.js";
 import { renderStep } from "./step.js";
@@ -11,6 +16,22 @@ import { loadHidden, saveHidden, store } from "./store.js";
 import { renderTimeline } from "./timeline.js";
 import { renderKindFilters, renderTree } from "./tree.js";
 import { clear, debounce, fmtMs, h, phaseColor } from "./util.js";
+import { renderWeights } from "./weights.js";
+
+const PAGES = {
+  replay: { label: "▶ Replay", render: renderReplay },
+  loss: { label: "Loss", render: renderLoss },
+  weights: { label: "Weights", render: renderWeights },
+  attention: { label: "Attention", render: renderAttention, insight: true, available: (s) => s.allBatches?.some((b) => attentionLayers(b).length) },
+  gradcam: { label: "Grad-CAM", render: renderGradcam, insight: true, available: (s) => s.allBatches?.some((b) => camLayers(b).length) },
+  embeddings: {
+    label: "Embeddings",
+    render: renderEmbeddings,
+    insight: true,
+    available: (s) => s.allBatches?.[0] && (representationLayers(s.allBatches[0]).length || embeddingTables(s).length),
+  },
+  explore: { label: "Explore" },
+};
 
 const $ = (id) => document.getElementById(id);
 const PHASES = ["data", "forward", "loss", "backward", "post_backward", "optimizer"];
@@ -57,6 +78,7 @@ async function selectRun(runId, initial = {}) {
     meta,
     steps,
     hidden,
+    page: PAGES[initial.page] ? initial.page : store.get().page || "replay",
     mode,
     batchIndex: clampIndex(initial.b, meta.batches_captured),
     stepIndex: clampIndex(initial.s, steps.length),
@@ -97,13 +119,19 @@ async function loadAllBatches() {
 // ------------------------------------------------------------------------------------------
 // rendering
 // ------------------------------------------------------------------------------------------
-function renderHeader() {
+function renderRunSelect() {
   const s = store.get();
-  const select = $("run-select");
   clear(
-    select,
+    $("run-select"),
     s.runs.map((r) => h("option", { value: r.run_id, selected: r.run_id === s.runId }, `${r.script?.split("/").pop() || r.run_id} · ${r.run_id.slice(0, 15)} · ${r.status}`)),
   );
+  const notices = s.meta?.notices?.length || 0;
+  $("notices-btn").classList.toggle("hidden", !notices && s.meta?.status !== "error");
+  $("notices-btn").title = `${notices} notice(s)`;
+}
+
+function renderHeader() {
+  const s = store.get();
   for (const button of $("mode-seg").querySelectorAll("button")) button.classList.toggle("on", button.dataset.mode === s.mode);
   const count = s.mode === "batch" ? s.meta?.batches_captured || 0 : s.steps.length;
   const current = s.mode === "batch" ? s.batchIndex : s.stepIndex;
@@ -123,6 +151,37 @@ function renderHeader() {
   const notices = s.meta?.notices?.length || 0;
   $("notices-btn").classList.toggle("hidden", !notices && s.meta?.status !== "error");
   $("notices-btn").title = `${notices} notice(s)`;
+}
+
+function renderNav() {
+  const s = store.get();
+  const items = [];
+  let insights = false;
+  for (const [key, page] of Object.entries(PAGES)) {
+    if (page.available && !page.available(s)) continue;
+    if (page.insight && !insights) {
+      items.push(h("span", { class: "sep" }), h("span", { class: "faint", style: { fontSize: "11px", marginRight: "2px" } }, "Insights"));
+      insights = true;
+    }
+    if (key === "explore") items.push(h("span", { class: "sep" }));
+    items.push(h("button", { class: `${s.page === key ? "on" : ""} ${page.insight ? "sub" : ""}`, onclick: () => store.set({ page: key }) }, page.label));
+  }
+  clear($("nav"), items);
+}
+
+function renderPage() {
+  const s = store.get();
+  const explore = s.page === "explore";
+  $("explore").classList.toggle("hidden", !explore);
+  $("page").classList.toggle("hidden", explore);
+  if (s.page !== "replay") stopReplay();
+  if (explore) {
+    clear($("page"));
+    for (const view of ["header", "phasebar", "left", "tabs", "center", "inspector"]) RENDER[view]();
+    return;
+  }
+  const page = PAGES[s.page] || PAGES.replay;
+  page.render($("page"));
 }
 
 function renderPhasebar() {
@@ -171,8 +230,12 @@ function renderLeft() {
   $("hidden-btn").classList.toggle("hidden", s.mode === "step");
 }
 
-// which views depend on which state keys
+// which views depend on which state keys (explore views only render while Explore is open)
+const EXPLORE_VIEWS = new Set(["header", "phasebar", "left", "tabs", "center", "inspector"]);
 const DEPENDS = {
+  nav: ["page", "allBatches", "steps", "meta", "runs"],
+  runselect: ["runs", "runId", "meta"],
+  page: ["page", "allBatches", "meta", "steps", "sample", "batchIndex", "runId"],
   header: ["runs", "runId", "mode", "batchIndex", "stepIndex", "steps", "meta", "sample", "batch"],
   phasebar: ["batch", "mode", "stepBatches"],
   left: ["batch", "mode", "filter", "kinds", "hidden", "expanded", "selection", "stepBatches", "steps", "stepIndex"],
@@ -181,6 +244,9 @@ const DEPENDS = {
   inspector: ["selection", "batch", "sample", "stepBatches", "mode"],
 };
 const RENDER = {
+  nav: renderNav,
+  runselect: renderRunSelect,
+  page: () => store.get().page !== "explore" && renderPage(),
   header: renderHeader,
   phasebar: renderPhasebar,
   left: renderLeft,
@@ -191,7 +257,10 @@ const RENDER = {
 
 store.subscribe((state, patch) => {
   const keys = Object.keys(patch);
+  if (keys.includes("page")) renderPage();
   for (const [view, deps] of Object.entries(DEPENDS)) {
+    if (view === "page" && keys.includes("page")) continue;
+    if (EXPLORE_VIEWS.has(view) && state.page !== "explore") continue;
     if (keys.some((k) => deps.includes(k))) {
       try {
         RENDER[view]();
@@ -230,11 +299,13 @@ function bindStatic() {
   }
   $("tree-search").addEventListener("input", debounce((e) => store.set({ filter: e.target.value.trim() }), 120));
   $("theme-btn").addEventListener("click", toggleTheme);
-  $("notices-btn").addEventListener("click", () => store.set({ tab: "overview" }));
+  $("notices-btn").addEventListener("click", () => store.set({ page: "explore", tab: "overview" }));
   $("hidden-btn").addEventListener("click", showHiddenDialog);
   document.addEventListener("keydown", (e) => {
-    if (e.target instanceof HTMLInputElement || e.metaKey || e.ctrlKey) return;
+    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement || e.metaKey || e.ctrlKey) return;
     const s = store.get();
+    if (s.page === "replay" && replayKey(e)) return;
+    if (s.page !== "explore") return;
     const count = s.mode === "batch" ? s.meta?.batches_captured || 0 : s.steps.length;
     const current = s.mode === "batch" ? s.batchIndex : s.stepIndex;
     if (e.key === "j" && current + 1 < count) goTo(current + 1);
@@ -309,13 +380,13 @@ function toggleTheme() {
 function readHash() {
   const params = new URLSearchParams(location.hash.slice(1));
   const int = (k) => (params.has(k) ? Number(params.get(k)) : undefined);
-  return { run: params.get("run"), mode: params.get("mode"), b: int("b"), s: int("s"), call: int("call"), sample: int("sample"), tab: params.get("tab") };
+  return { run: params.get("run"), page: params.get("page"), mode: params.get("mode"), b: int("b"), s: int("s"), call: int("call"), sample: int("sample"), tab: params.get("tab") };
 }
 
 const writeHash = debounce(() => {
   const s = store.get();
   if (!s.runId) return;
-  const params = new URLSearchParams({ run: s.runId, mode: s.mode, tab: s.tab });
+  const params = new URLSearchParams({ run: s.runId, page: s.page, mode: s.mode, tab: s.tab });
   if (s.mode === "batch") params.set("b", s.batchIndex);
   else params.set("s", s.stepIndex);
   if (s.selection?.call != null) params.set("call", s.selection.call);
@@ -323,5 +394,5 @@ const writeHash = debounce(() => {
   history.replaceState(null, "", `#${params}`);
 }, 100);
 
-window.addEventListener("resize", debounce(() => store.get().tab === "timeline" && renderCenter(), 150));
+window.addEventListener("resize", debounce(() => store.get().page === "explore" && store.get().tab === "timeline" && renderCenter(), 150));
 boot();

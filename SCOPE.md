@@ -172,6 +172,17 @@ and hand back the localhost link.
 - Custom `autograd.Function` backward internals; per-sample *parameter* gradients
 - Audio, tabular and other modalities
 
+## v1.1: Replay, Loss, Weights, Insights
+
+- **Replay** page (default): transport (play/pause/step/phase jump/speed), granularity
+  (layer · every call · phase · batch), followed sample, model stack with activation → gradient
+  thumbnails, per-event detail.
+- **Loss** page: loss per batch, loss call + reduction, per-sample p(target)/loss, confusion matrix,
+  per-token loss for sequence models.
+- **Weights** page: per-layer weight / gradient / update across steps, conv kernel grids, all-layers grid.
+- **Insights**: Attention (maps + rollout), Grad-CAM (true class-score gradients via an extra
+  autograd.grad pass), Embeddings (layer-wise sample PCA, embedding-table PCA).
+
 ## TODO (after v1)
 
 - [ ] Dataset browser: whole dataset, not just captured batches
@@ -180,6 +191,8 @@ and hand back the localhost link.
 - [ ] Light monitoring for the full run
 - [ ] Multi-GPU
 - [ ] More modalities (audio, tabular)
+- [ ] Opt-in fixed "probe batch" re-scored each step, to separate learning progress from batch difficulty
+- [ ] Attention for library modules / fused attention (needs recomputing weights)
 - [ ] Opt-in cloud relay for zero-config shareable https links (no SSH)
 
 ## Known edge cases

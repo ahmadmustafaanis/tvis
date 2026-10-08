@@ -90,19 +90,18 @@ tvis open gpu
 
 ## The viewer
 
-| Part | What it shows |
+| Page | What it shows |
 |---|---|
-| Phase bar | time split into data → forward → loss → backward → optimizer for the batch or step |
-| Calls | the call tree. Filter by name or kind. Hide calls like a given one with ⊘ (their children stay visible). Repeated calls are grouped. |
-| Overview | what was captured, model and data summary, per-batch loss and time, notices |
-| Samples | every datapoint with target, prediction, confidence and loss. Click one to follow it from the raw input through every stage, and every tensor in the UI is sliced to that sample. |
-| Timeline | flame chart of forward and backward |
-| Source | your code as it ran, with the shape each line produced, the calls each line made, and per-function times |
-| Layers | sortable table of all calls with output σ, % zeros, ‖grad‖ and times. NaN/Inf, vanishing gradients and dead units are flagged. |
-| Step | micro-batches, and per-parameter ‖w‖, ‖grad‖, ‖Δw‖, ‖Δw‖/‖w‖ |
-| Inspector | the selected call: definition and call site, times, inputs and outputs. Each tensor has stats, a histogram, a value/gradient heatmap with dimension sliders, or an image view. |
+| **▶ Replay** (default) | Plays the recorded steps back like training happening. The batch loads and your sample goes through the transforms; each layer lights up with its activation for that sample; the loss appears; gradients flow back up, each layer coloured by ‖dL/d(output)‖; the optimizer updates; the next batch starts. Play/pause, step (←/→), jump by phase, pick the step size (layer · every call · phase · batch) and the sample (`[` / `]`). |
+| **Loss** | Loss per batch across the run. The exact loss call and how it reduces. Each sample's p(target) → −log p → loss, worst first. A confusion matrix over all captured samples (classification), or each target token coloured by its loss with padding struck out (language models). |
+| **Weights** | One layer at a time: conv kernels as a filter × channel grid, matrices as heatmaps, with stats and histograms. Switch weight / gradient / update Δw and slide across steps. "All layers" shows lazily loaded thumbnails of every parameter. |
+| **Insights → Attention** | Token-to-token attention maps from softmax weights computed in your code, per layer and head with real tokens on the axes, plus attention rollout across layers. |
+| **Insights → Grad-CAM** | True Grad-CAM (class-score gradients) over each input image, per conv layer, for the predicted or the true class. |
+| **Insights → Embeddings** | PCA of every captured sample's representation at a chosen layer, coloured by class (slide through depth to see classes separate), and PCA of embedding tables labelled by token. |
+| **Explore** | The full debugger: call tree, inspector, samples, timeline, annotated source, layers table, step view. |
 
-Keys: `j` / `k` next / previous batch, `Esc` stop following a sample, `/` filter.
+Insight pages appear only when they apply: Grad-CAM needs conv layers, Attention needs attention
+softmaxes, and so on.
 
 ## Accuracy
 
@@ -112,6 +111,8 @@ Keys: `j` / `k` next / previous batch, `Esc` stop following a sample, `/` filter
   updates match `p_after - p_before` exactly.
 - **Timing excludes tvis.** Forward times and timeline positions have tvis's own capture work
   subtracted. On CUDA they are device times (CUDA events), not Python wall time.
+- **Grad-CAM doesn't disturb training.** It uses an extra `autograd.grad` pass that never writes
+  `.grad`, and tvis's gradient hooks are paused during it. Disable it with `--no-gradcam`.
 - **Approximations are labelled.**
   - Backward time per call is inferred from when gradients arrive.
   - The batch dimension of merged tensors such as `[B*T, V]` is inferred.
@@ -124,6 +125,9 @@ Keys: `j` / `k` next / previous batch, `Esc` stop following a sample, `/` filter
 - With AMP `GradScaler`, recorded gradients are the scaled gradients.
 - Tensors above `--max-elems` (default 2M elements) keep stats and their leading rows only.
 - Image and text decoding support: torchvision transforms (v1/v2), PIL, HuggingFace tokenizers.
+- Attention maps need the softmax to be computed in your project's code. Fused kernels
+  (`F.scaled_dot_product_attention`) and attention inside libraries never expose their weights.
+- During the Grad-CAM pass, gradient hooks *you* registered on activations also fire once more.
 
 ## Development
 

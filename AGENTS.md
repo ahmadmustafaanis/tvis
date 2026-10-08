@@ -44,6 +44,7 @@ src/tvis/
     ops.py            line-level op recorder (TorchFunctionMode)
     data.py           DataLoader / transforms / tokenizer / loss instrumentation
     decode.py         per-sample targets, predictions and losses
+    gradcam.py        Grad-CAM via an extra autograd.grad pass at the loss call
     project.py        which files are "the user's project"; source snapshots
   store/              run-directory format: schema, writer (capture side), reader (numpy only)
   viewer/             numpy + stdlib only
@@ -53,6 +54,8 @@ src/tvis/
     targets.py        host:path / saved targets / ssh command construction
     server.py         127.0.0.1 HTTP server
   ui/                 static browser UI: index.html, style.css, js/*.js (ES modules, no build)
+                      pages: replay, loss, weights, attention, gradcam, embeddings, explore (the
+                      original debugger: tree/inspector/samples/timeline/source/layers/step)
 tests/                capture/ (torch), store/ + viewer/ (no torch), e2e/ (subprocesses, slow)
 examples/             image_classifier/ and text_lm/: runnable scripts used by e2e tests
 ```

@@ -108,13 +108,24 @@ class Api:
         return {"tid": tid, **views.full_array(array)}
 
     def _thumb(
-        self, run: str, batch: int, tid: str, sample: int | None = None, grad: bool = False, size: int = 48
+        self,
+        run: str,
+        batch: int,
+        tid: str,
+        sample: int | None = None,
+        grad: bool = False,
+        size: int = 48,
+        layout: str = "auto",
     ) -> dict[str, Any]:
+        """``layout="matrix"`` flattens everything after dim 0 (weights: out x in*k*k) instead of
+        averaging leading dims (activations: mean |x| over channels)."""
         r = self.root.run(run)
         meta = self._tensor_meta(r, int(batch), tid)
         array = r.array(int(batch), tid, grad=bool(grad))
         if sample is not None and meta.get("batch_dim"):
             array = views.select_sample(array, meta, int(sample), grad=bool(grad))
+        if layout == "matrix" and array.ndim > 2:
+            array = np.asarray(array).reshape(array.shape[0], -1)
         return {"tid": tid, **views.thumbnail(array, size=max(4, min(int(size), 256)))}
 
     def _loss_detail(self, run: str, batch: int) -> dict[str, Any]:

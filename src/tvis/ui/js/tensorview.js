@@ -69,6 +69,21 @@ export function drawHistogram(canvas, hist, color) {
   }
 }
 
+/** Draw a tensor_view/thumb response as a heatmap into `canvas` (one pixel per cell). */
+export function drawHeat(canvas, view) {
+  const values = decodeFloat32(view.data);
+  canvas.width = view.cols;
+  canvas.height = view.rows;
+  const ctx = canvas.getContext("2d");
+  const img = ctx.createImageData(view.cols, view.rows);
+  const cmap = colorFor(view.min, view.max);
+  for (let i = 0; i < values.length; i++) {
+    const [r, g, b] = Number.isFinite(values[i]) ? cmap.fn(values[i]) : [242, 103, 107];
+    img.data.set([r, g, b, 255], i * 4);
+  }
+  ctx.putImageData(img, 0, 0);
+}
+
 export function drawImage(canvas, image) {
   const { width, height } = image;
   const rgb = decodeBytes(image.data);

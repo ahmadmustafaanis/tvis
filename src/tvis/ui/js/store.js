@@ -5,6 +5,7 @@ const state = {
   runId: null,
   meta: null,
   steps: [],
+  page: "replay", // replay | loss | weights | attention | gradcam | embeddings | explore
   mode: "batch", // "batch" | "step"
   batchIndex: 0,
   stepIndex: 0,

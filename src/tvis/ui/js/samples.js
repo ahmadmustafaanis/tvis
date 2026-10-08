@@ -35,7 +35,7 @@ export function renderSamples(container) {
     h(
       "div",
       { class: "view" },
-      followed ? h("section", {}, h("h3", {}, `Sample #${followed.position}`, followed.index != null ? h("span", { class: "faint" }, ` · dataset index ${followed.index}`) : null), pipeline(batch, followed, state)) : null,
+      followed ? h("section", {}, h("h3", {}, `Sample #${followed.position}`, followed.index != null ? h("span", { class: "faint" }, ` · dataset index ${followed.index}`) : null), samplePipeline(batch, followed, state)) : null,
       h("section", {}, toolbar, h("div", { class: `samples ${isText ? "text" : ""}` }, samples.map((s) => (isText ? textCard(s, state) : imageCard(batch, s, state))))),
     ),
   );
@@ -100,7 +100,7 @@ async function thumbnail(canvas, batch, sample, run) {
   }
 }
 
-function pipeline(batch, sample, state) {
+export function samplePipeline(batch, sample, state) {
   const idx = index(batch);
   const stages = [];
   if (sample.sample_call != null) {
