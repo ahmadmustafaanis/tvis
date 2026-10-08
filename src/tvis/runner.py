@@ -25,6 +25,7 @@ class RunOptions:
     out_dir: Path | None = None
     project_dir: Path | None = None
     max_elems: int = 2_000_000
+    sample_rows: int = 16
     max_batches: int = 64
     trace_functions: bool = True
     record_ops: bool = True
@@ -61,6 +62,7 @@ def run(options: RunOptions) -> RunResult:
         steps=options.steps,
         max_batches=options.max_batches,
         max_elems=options.max_elems,
+        sample_rows=options.sample_rows,
         trace_functions=options.trace_functions,
         record_ops=options.record_ops,
         gradcam=options.gradcam,

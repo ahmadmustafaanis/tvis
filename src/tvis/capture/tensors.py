@@ -98,10 +98,12 @@ class TensorRegistry:
         *,
         max_elems: int,
         mark: Callable[[], Mark],
+        min_rows: int = 1,
         internal: Callable[[], Any],
         guard: Callable[[str], Any],
     ):
         self.max_elems = max_elems
+        self.min_rows = max(1, min_rows)
         self._mark = mark
         self._internal = internal
         self._guard = guard
@@ -157,9 +159,11 @@ class TensorRegistry:
         if t.numel() <= self.max_elems:
             return t.clone(), "full", None
         if t.dim() >= 1 and t.shape[0] > 0:
+            # Leading rows are usually samples: keep at least `min_rows` so the first samples can
+            # be followed through every layer, and more if they fit in `max_elems`.
             per_row = max(1, t[0].numel())
-            rows = min(t.shape[0], self.max_elems // per_row)
-            if rows >= 1:
+            rows = min(t.shape[0], max(self.min_rows, self.max_elems // per_row))
+            if rows >= 1 and rows * per_row <= max(self.max_elems, self.min_rows * per_row):
                 return t[:rows].clone(), "rows", rows
         return None, "none", None
 

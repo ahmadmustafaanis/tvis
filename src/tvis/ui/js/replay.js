@@ -2,7 +2,7 @@
 // forward → loss → gradients flowing back → optimizer update → next batch.
 
 import { api } from "./api.js";
-import { firstOutput, index, lossValue } from "./model.js";
+import { firstOutput, followableSamples, index, lossValue } from "./model.js";
 import { samplePipeline } from "./samples.js";
 import { store } from "./store.js";
 import { drawHeat, drawImage, tensorCard } from "./tensorview.js";
@@ -136,8 +136,7 @@ export function replayKey(event) {
 }
 
 function sampleCount() {
-  const batch = currentBatch();
-  return batch?.samples?.length || batch?.batch_size || 1;
+  return followableSamples(currentBatch()).limit;
 }
 
 function shiftSample(d) {
@@ -257,6 +256,10 @@ function update() {
     h("button", { onclick: () => shiftSample(-1), title: "Previous sample ([)" }, "‹"),
     h("b", {}, `#${sample}`),
     h("button", { onclick: () => shiftSample(1), title: "Next sample (])" }, "›"),
+    (() => {
+      const { total, limit } = followableSamples(batch);
+      return limit < total ? h("span", { class: "faint", title: "Larger tensors keep only their first rows (raise --max-elems to store more)" }, `of ${limit} stored / ${total}`) : null;
+    })(),
   );
   for (const row of R.dom.events.querySelectorAll(".ev")) {
     const i = Number(row.dataset.i);

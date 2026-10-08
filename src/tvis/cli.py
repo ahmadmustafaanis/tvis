@@ -33,6 +33,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=2_000_000,
         help="store full values for tensors up to this many elements; larger ones keep stats + leading rows",
     )
+    run.add_argument(
+        "--sample-rows",
+        type=int,
+        default=16,
+        help="for tensors over --max-elems, still keep the first N rows (samples) so they can be followed",
+    )
     run.add_argument("--max-batches", type=int, default=64, help="safety cap on captured batches")
     run.add_argument("--no-functions", action="store_true", help="don't trace project functions")
     run.add_argument("--no-ops", action="store_true", help="don't record line-level ops")
@@ -108,6 +114,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         out_dir=args.out,
         project_dir=args.project,
         max_elems=args.max_elems,
+        sample_rows=args.sample_rows,
         max_batches=args.max_batches,
         trace_functions=not args.no_functions,
         record_ops=not args.no_ops,

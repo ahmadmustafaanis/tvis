@@ -106,11 +106,40 @@ class TestStorageLimits:
         assert torch.equal(record.value, x[:10])
         assert record.stats["numel"] == 3000  # stats always describe the whole tensor
 
-    def test_tensors_whose_single_row_is_too_large_are_not_stored(self, registry: TensorRegistry):
-        record = registry.capture(torch.zeros(2, 2000))
+    def test_tensors_whose_single_row_is_too_large_keep_one_row(self, registry: TensorRegistry):
+        record = registry.capture(torch.zeros(3, 2000))
+
+        assert record.stored == "rows" and record.stored_rows == 1
+        assert record.stats["numel"] == 6000
+
+    def test_min_rows_keeps_the_first_samples_followable_even_beyond_max_elems(self):
+        timer = Timer()
+        registry = TensorRegistry(
+            max_elems=1000,
+            min_rows=4,
+            mark=timer.mark,
+            internal=contextlib.nullcontext,
+            guard=lambda _: contextlib.nullcontext(),
+        )
+        x = torch.arange(10 * 600.0).reshape(10, 600)  # one row alone is within budget, 4 rows exceed it
+
+        record = registry.capture(x)
+
+        assert record.stored == "rows" and record.stored_rows == 4
+        assert torch.equal(record.value, x[:4])
+
+    def test_scalars_beyond_the_budget_are_not_stored(self):
+        timer = Timer()
+        registry = TensorRegistry(
+            max_elems=0,
+            mark=timer.mark,
+            internal=contextlib.nullcontext,
+            guard=lambda _: contextlib.nullcontext(),
+        )
+
+        record = registry.capture(torch.tensor(1.0))
 
         assert record.stored == "none" and record.value is None
-        assert record.stats["numel"] == 4000
 
 
 class TestBatches:

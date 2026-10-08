@@ -55,6 +55,7 @@ class CaptureConfig:
     steps: int = 3
     max_batches: int = 64
     max_elems: int = 2_000_000
+    sample_rows: int = 16
     trace_functions: bool = True
     record_ops: bool = True
     gradcam: bool = True
@@ -113,7 +114,11 @@ class Session:
         self.timer = Timer(record_cuda=torch.cuda.is_available())
         self.project = ProjectFiles(config.project_dir, on_new_file=self._snapshot_source)
         self.registry = TensorRegistry(
-            max_elems=config.max_elems, mark=self.timer.mark, internal=self.internal, guard=self.guard
+            max_elems=config.max_elems,
+            min_rows=config.sample_rows,
+            mark=self.timer.mark,
+            internal=self.internal,
+            guard=self.guard,
         )
         self.patcher = Patcher()
         self._tl = threading.local()
@@ -721,6 +726,7 @@ class Session:
             "batches_captured": self.batches_written,
             "config": {
                 "max_elems": cfg.max_elems,
+                "sample_rows": cfg.sample_rows,
                 "max_batches": cfg.max_batches,
                 "trace_functions": cfg.trace_functions,
                 "record_ops": cfg.record_ops,

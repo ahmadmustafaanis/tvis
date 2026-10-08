@@ -192,7 +192,9 @@ def test_model_discovery_scans_the_heap_once_not_per_call(capture, monkeypatch):
 
     scans = []
     original = session_module._optimizers_owning
-    monkeypatch.setattr(session_module, "_optimizers_owning", lambda params: scans.append(1) or original(params))
+    monkeypatch.setattr(
+        session_module, "_optimizers_owning", lambda params: scans.append(1) or original(params)
+    )
     model = models.SplitForwardNet()
     opt = torch.optim.SGD(model.parameters(), lr=0.1)
 

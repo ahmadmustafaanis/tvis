@@ -69,6 +69,11 @@ function camCard(batch, call, sample, state) {
 }
 
 function paint(canvas, image, cam) {
+  paintOverlay(canvas, image, cam ? decodeFloat32(cam.data) : null, cam?.shape[0], cam?.shape[1], G.opacity);
+}
+
+/** Draw an RGB image scaled to the canvas, then a [rows × cols] heat in [0, 1] smoothed over it. */
+export function paintOverlay(canvas, image, values, rows, cols, opacity = 0.55) {
   const ctx = canvas.getContext("2d");
   const base = document.createElement("canvas");
   base.width = image.width;
@@ -80,15 +85,13 @@ function paint(canvas, image, cam) {
   bctx.putImageData(img, 0, 0);
   ctx.imageSmoothingEnabled = false;
   ctx.drawImage(base, 0, 0, canvas.width, canvas.height);
-  if (!cam) return;
-  const [ch, cw] = cam.shape;
-  const values = decodeFloat32(cam.data);
+  if (!values) return;
   const heat = document.createElement("canvas");
-  heat.width = cw;
-  heat.height = ch;
+  heat.width = cols;
+  heat.height = rows;
   const hctx = heat.getContext("2d");
-  const himg = hctx.createImageData(cw, ch);
-  values.forEach((v, i) => himg.data.set([...jet(v), Math.round(255 * G.opacity * Math.min(1, v * 1.2))], i * 4));
+  const himg = hctx.createImageData(cols, rows);
+  values.forEach((v, i) => himg.data.set([...jet(v), Math.round(255 * opacity * Math.min(1, v * 1.2))], i * 4));
   hctx.putImageData(himg, 0, 0);
   ctx.imageSmoothingEnabled = true;
   ctx.drawImage(heat, 0, 0, canvas.width, canvas.height);

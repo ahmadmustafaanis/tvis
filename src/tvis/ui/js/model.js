@@ -120,3 +120,17 @@ export function sampleShape(meta) {
   if (!bd) return null;
   return bd.block === 1 ? meta.shape.slice(1) : [bd.block, ...meta.shape.slice(1)];
 }
+
+/**
+ * How many samples of a batch can be followed: tensors larger than --max-elems keep only their
+ * first rows, so following sample i only works while i is below the smallest stored row count.
+ */
+export function followableSamples(batch) {
+  const total = batch?.samples?.length || batch?.batch_size || 1;
+  let limit = total;
+  for (const meta of Object.values(batch?.tensors || {})) {
+    if (!meta.batch_dim || meta.stored !== "rows" || meta.stored_rows == null) continue;
+    limit = Math.min(limit, Math.floor(meta.stored_rows / (meta.batch_dim.block || 1)));
+  }
+  return { total, limit: Math.max(1, limit) };
+}
