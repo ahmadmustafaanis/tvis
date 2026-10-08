@@ -32,20 +32,29 @@ gradients → optimizer update, with GPU-accurate timings), writes a run directo
 src/tvis/
   cli.py              entry point: run | open | agent | target
   runner.py           runs the user script in-process, stops after N steps
-  capture/            everything that executes inside the training process
-    session.py        orchestrator: phases, batch/step boundaries, call stack
-    tensors.py        tensor registry: ids, stats, value/grad capture
+  capture/            everything that executes inside the training process (imports torch)
+    session.py        orchestrator: phases, batch/step state machine, call stack, finalisation
+    calls.py          Call records and their JSON form (timing, backward window)
+    tensors.py        tensor registry: ids, stats, value/grad capture, storage limits
+    values.py         arbitrary Python values → JSON value refs
     stats.py          on-device tensor statistics
-    timing.py         CUDA-event / perf_counter marks and overhead accounting
+    timing.py         CUDA-event / perf_counter marks, overhead accounting, corrected clock
     modules.py        global nn.Module hooks
     tracer.py         project-function tracer (sys.setprofile, project files only)
     ops.py            line-level op recorder (TorchFunctionMode)
     data.py           DataLoader / transforms / tokenizer / loss instrumentation
-  store/              run-directory format: writer (capture side), reader (viewer side)
-  viewer/             HTTP server, request dispatch, stdio agent, SSH transport
-  ui/                 static browser UI (vanilla JS modules, no build step)
-tests/                mirrors src/tvis/ (tests/capture, tests/store, tests/viewer, tests/e2e)
-examples/             small runnable training scripts (images + text) used by e2e tests
+    decode.py         per-sample targets, predictions and losses
+    project.py        which files are "the user's project"; source snapshots
+  store/              run-directory format: schema, writer (capture side), reader (numpy only)
+  viewer/             numpy + stdlib only
+    api.py            request dispatch shared by the HTTP server and the stdio agent
+    views.py          tensor slices and RGB images for the UI
+    transport.py      LocalBackend, StdioBackend (ssh), serve_stdio (remote agent)
+    targets.py        host:path / saved targets / ssh command construction
+    server.py         127.0.0.1 HTTP server
+  ui/                 static browser UI: index.html, style.css, js/*.js (ES modules, no build)
+tests/                capture/ (torch), store/ + viewer/ (no torch), e2e/ (subprocesses, slow)
+examples/             image_classifier/ and text_lm/: runnable scripts used by e2e tests
 ```
 
 ## Non-negotiable invariants
@@ -70,14 +79,22 @@ examples/             small runnable training scripts (images + text) used by e2
   via `to_json()`.
 - No new runtime dependencies without discussion; the viewer side is stdlib + numpy on purpose.
 - Prefer explicit names over abbreviations (`grad_arrival_mark`, not `gam`).
-- UI: vanilla ES modules, no bundler, no framework. CSS colours only via variables in `ui/style.css`.
+- UI: vanilla ES modules, no bundler, no framework. State lives in `ui/js/store.js`; views re-render
+  from it (see `DEPENDS` in `app.js`). CSS colours only via tokens in `ui/style.css`
+  (`tests/viewer/test_ui_assets.py` enforces this and that every import resolves).
+- To check UI changes: `tvis run` an example into a scratch dir, then
+  `tvis open <dir> --no-browser --port 8765` and load http://127.0.0.1:8765/.
 
 ## Tests
 
 - Tests describe behaviour, one behaviour per test, named `test_<behaviour>_<condition>`.
   Example: `test_grad_hook_receives_pre_inplace_gradient`.
-- Use the fixtures in `tests/conftest.py` (`toy_mlp`, `run_dir`, `capture_session`, …) instead of
-  re-building models in each test. Add a fixture when two tests need the same setup.
+- Capture tests use the `capture(fn, steps=..., **config)` fixture from `tests/capture/conftest.py`:
+  it runs `fn` under a real session and reads the result back through the viewer-side reader.
+  "User code" for those tests lives in `tests/capture/models.py` and `datasets.py` (that directory
+  is the traced project). Locate source lines with `models.line_of(...)`, never hard-code them.
+- Viewer tests use the synthetic run in `tests/viewer/conftest.py` and must not import torch
+  (CI runs them in a torch-free job). Remote access is tested with a fake `ssh` executable.
 - Compare tensors with `torch.testing.assert_close` / `numpy.testing.assert_allclose`, and use
   exact equality (`torch.equal`) when asserting "numerics unchanged".
 - No sleeps, no network, no GPU requirement. CUDA-specific paths are tested via the timer

@@ -12,10 +12,10 @@ python train.py --lr 3e-4
 
 # debug run — same script, same args, no code changes
 tvis run --steps 3 train.py --lr 3e-4
-#   → runs 3 optimizer steps, writes runs/<run-id>/, exits
+#   → runs 3 optimizer steps, writes tvis_runs/<run-id>/, exits
 
 # view — run on your laptop; hops come from ~/.ssh/config (see "Viewing remotely")
-tvis open mycluster:~/proj/runs
+tvis open mycluster:~/proj/tvis_runs
 ```
 
 On SLURM: swap `python train.py` → `tvis run train.py` in the sbatch script (or an `srun` allocation).
@@ -115,7 +115,7 @@ Mac                                         cluster login node
 ```
 
 ```bash
-tvis open mycluster:~/proj/runs          # opens browser on the Mac
+tvis open mycluster:~/proj/tvis_runs     # opens browser on the Mac
 ```
 
 - Works where TCP forwarding is disabled on the cluster; no open port on shared login nodes;
@@ -127,10 +127,10 @@ tvis open mycluster:~/proj/runs          # opens browser on the Mac
 
 ### Specifying hops (a "target" = host + runs path)
 Resolution order:
-1. **`~/.ssh/config`** aliases incl. `ProxyJump` (recommended; no new format): `tvis open mycluster:~/proj/runs`
-2. **CLI**: `tvis open --via A --via B C:~/proj/runs`
-3. **Saved target**: `tvis target add gpu --via A,B --host C --path ~/proj/runs` → `tvis open gpu`
-   (stored in `~/.tvis/config.toml`)
+1. **`~/.ssh/config`** aliases incl. `ProxyJump` (recommended; no new format): `tvis open mycluster:~/proj/tvis_runs`
+2. **CLI**: `tvis open --via A --via B C:~/proj/tvis_runs`
+3. **Saved target**: `tvis target add gpu --via A,B --host C --path ~/proj/tvis_runs` → `tvis open gpu`
+   (stored in `~/.tvis/targets.json`)
 
 ### Backtracking help
 `tvis run` ends by printing its hostname, the run path and the exact `tvis open` command to run on
@@ -183,6 +183,10 @@ and hand back the localhost link.
 - [ ] Opt-in cloud relay for zero-config shareable https links (no SSH)
 
 ## Known edge cases
+
+- AMP `GradScaler`: recorded gradients are the scaled gradients.
+- `torch.compile`d modules may hide their internals from module hooks.
+- Two optimizers (e.g. GANs) close a step per optimizer update, lazily at the next batch.
 
 - HF `datasets` that tokenize in a `.map()` preprocessing pass before training: raw text is
   available only if the dataset keeps a text column; otherwise the pipeline starts at token ids.
