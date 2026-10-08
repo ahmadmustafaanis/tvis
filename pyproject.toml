@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tvis"
+version = "0.1.0"
+description = "Step-through debugger for PyTorch training: record the first N steps end to end and inspect them in a browser."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "Ahmad Anis" }]
+# torch is intentionally not a hard dependency: `tvis open` runs on a laptop without torch.
+# `tvis run` imports torch from the user's training environment.
+dependencies = ["numpy>=1.23"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6", "pillow", "torchvision", "transformers"]
+
+[project.scripts]
+tvis = "tvis.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+tvis = ["ui/*", "ui/**/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+markers = [
+  "slow: end-to-end tests that launch subprocesses",
+]
+
+[tool.ruff]
+line-length = 110
+target-version = "py310"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
+ignore = ["E501", "RUF012"]
