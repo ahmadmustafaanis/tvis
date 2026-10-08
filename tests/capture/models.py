@@ -129,3 +129,27 @@ def make_image_batches(n: int, batch_size: int = 4, size: int = 8, n_classes: in
         )
         for _ in range(n)
     ]
+
+
+class SplitForwardNet(nn.Module):
+    """Like NanoViT: the training loop calls `features` and `read`, never `model(x)`."""
+
+    def __init__(self):
+        super().__init__()
+        self.embed = nn.Linear(6, 8)
+        self.blocks = nn.Sequential(nn.Linear(8, 8), nn.ReLU(), nn.Linear(8, 8))
+        self.head = nn.Linear(8, 3)
+
+    def features(self, x: torch.Tensor) -> torch.Tensor:
+        return self.blocks[:-1](self.embed(x))  # slicing makes a new Sequential on every call
+
+    def read(self, z: torch.Tensor) -> torch.Tensor:
+        return self.head(self.blocks[-1](z))
+
+
+def train_split(model: SplitForwardNet, optimizer: torch.optim.Optimizer, batches):
+    for x, y in batches:
+        loss = F.cross_entropy(model.read(model.features(x)), y)
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()

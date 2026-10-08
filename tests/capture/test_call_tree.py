@@ -172,3 +172,16 @@ def test_source_files_that_executed_are_snapshotted(capture):
 
     assert "models.py" in result.meta["sources"]
     assert result.run.source("models.py") == Path(models.__file__).read_text()
+
+
+def test_model_called_through_methods_keeps_its_layer_paths(capture):
+    model = models.SplitForwardNet()
+    opt = torch.optim.SGD(model.parameters(), lr=0.1)
+
+    result = capture(lambda: models.train_split(model, opt, models.make_batches(3)), steps=2)
+
+    assert [m["cls"] for m in result.meta["models"]] == ["SplitForwardNet"]
+    modules = {c["name"] for c in result.calls(kind="module")}
+    assert {"embed", "blocks.0", "blocks.1", "blocks.2", "head"} <= modules
+    assert {p["name"] for p in result.steps[0]["params"]} == {n for n, _ in model.named_parameters()}
+    assert [s["batches"] for s in result.steps] == [[0], [1]]

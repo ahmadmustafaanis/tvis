@@ -139,6 +139,7 @@ class Session:
         self.started_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
         self._instrumentations: list[Any] = []
         self._last_batch_had_backward = False
+        self._discovered_for = 0
 
     # ------------------------------------------------------------------------------------------
     # lifecycle
@@ -369,6 +370,7 @@ class Session:
             or (not grad and id(module) in batch.forward_models)
         ):
             self._begin_batch()
+        self._discover_model(module)
         self._register_model(module)
         batch = self.batch
         assert batch is not None
@@ -522,9 +524,29 @@ class Session:
     # ------------------------------------------------------------------------------------------
     # models, parameters, optimizers, backward
     # ------------------------------------------------------------------------------------------
+    def _discover_model(self, called: nn.Module) -> None:
+        """Register the module that owns the optimizers' parameters as the model, before any of its
+        submodules are seen as top-level calls. Needed when the script never calls the model itself
+        (e.g. ``z = model.features(x); logits = model.read(z)``): then every submodule call looks
+        top-level, and only the owner gives layers their real paths (``blocks.0.attn``)."""
+        for opt in _optimizers_owning(list(called.parameters())):  # optimizers built before install
+            if not any(o is opt for o in self.optimizers):
+                self.optimizers.append(opt)
+        if self._discovered_for == len(self.optimizers) or not self.optimizers:
+            return
+        self._discovered_for = len(self.optimizers)
+        owner = _module_owning(
+            {id(p) for opt in self.optimizers for g in opt.param_groups for p in g["params"]}
+        )
+        if owner is not None:
+            self._register_model(owner)
+
     def _register_model(self, model: nn.Module) -> None:
         if any(m is model for m in self.models):
             return
+        known = list(model.parameters())
+        if self.models and known and all(id(p) in self._param_names for p in known):
+            return  # a part of a model we already know (e.g. a submodule or `model.blocks[:-1]`)
         root_idx = len(self.models)
         self.models.append(model)
         for path, mod in model.named_modules():
@@ -812,6 +834,24 @@ def _environment() -> dict[str, Any]:
         with contextlib.suppress(Exception):
             env["device"] = torch.cuda.get_device_name()
     return env
+
+
+def _module_owning(param_ids: set[int]) -> nn.Module | None:
+    """The smallest live module whose parameters include all of ``param_ids``; among modules with
+    the same parameters (a Sequential and its only Linear), the outermost one."""
+    import gc
+
+    best, best_key = None, None
+    for obj in gc.get_objects():
+        if not issubclass(type(obj), nn.Module):
+            continue
+        own = {id(p) for p in obj.parameters()}
+        if not param_ids <= own:
+            continue
+        key = (len(own), -sum(1 for _ in obj.modules()))
+        if best_key is None or key < best_key:
+            best, best_key = obj, key
+    return best
 
 
 def _optimizers_owning(params: list[torch.Tensor]) -> list[torch.optim.Optimizer]:
