@@ -28,7 +28,8 @@ def test_run_returns_meta_and_steps(api: Api):
     run = api.dispatch("run", {"run": RUN_ID})
 
     assert run["meta"]["script"] == "/proj/train.py"
-    assert run["steps"] == [{"index": 0, "batches": [0], "params": []}]
+    assert [s["batches"] for s in run["steps"]] == [[0]]
+    assert run["steps"][0]["params"][0]["name"] == "embed.weight"
 
 
 def test_tensor_returns_a_view_of_value_or_gradient(api: Api):

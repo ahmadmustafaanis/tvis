@@ -117,3 +117,63 @@ def _rgb(pixels: np.ndarray) -> dict[str, Any]:
         "width": int(w),
         "data": base64.b64encode(np.ascontiguousarray(pixels[..., :3]).tobytes()).decode("ascii"),
     }
+
+
+MAX_ARRAY_ELEMS = 2_000_000
+
+
+def full_array(array: np.ndarray) -> dict[str, Any]:
+    """All values (float32), for small tensors the UI lays out itself (conv kernels, CAMs)."""
+    array = np.asarray(array)
+    if array.size > MAX_ARRAY_ELEMS:
+        raise ViewError(f"tensor too large to send whole ({array.size} > {MAX_ARRAY_ELEMS} elements)")
+    values = np.ascontiguousarray(array, dtype="<f4")
+    finite = values[np.isfinite(values)]
+    return {
+        "shape": list(array.shape),
+        "min": float(finite.min()) if finite.size else None,
+        "max": float(finite.max()) if finite.size else None,
+        "data": base64.b64encode(values.tobytes()).decode("ascii"),
+    }
+
+
+def thumbnail(array: np.ndarray, size: int = 48) -> dict[str, Any]:
+    """A small 2-D summary of one sample's activation: channel-wise mean |x| for [C, H, W] (and
+    any higher-rank tensor), the tensor itself for 2-D, one row for 1-D."""
+    array = np.asarray(array, dtype=np.float32)
+    if array.ndim >= 3:
+        array = np.abs(array).mean(axis=tuple(range(array.ndim - 2)))
+    return {
+        "reduced": "mean |x| over leading dims" if np.asarray(array).ndim == 2 else None,
+        **tensor_view(array, max_side=size),
+    }
+
+
+def pca2(features: np.ndarray) -> tuple[np.ndarray, list[float]]:
+    """Project rows onto their first two principal components; returns (coords [N, 2], variance ratios)."""
+    x = np.asarray(features, dtype=np.float64)
+    if x.ndim != 2 or x.shape[0] < 2:
+        raise ViewError("need at least two vectors for a projection")
+    x = np.nan_to_num(x - x.mean(axis=0, keepdims=True))
+    _, s, vt = np.linalg.svd(x, full_matrices=False)
+    k = min(2, vt.shape[0])
+    coords = x @ vt[:k].T
+    if k < 2:
+        coords = np.pad(coords, ((0, 0), (0, 2 - k)))
+    variance = s**2
+    total = variance.sum() or 1.0
+    return coords, [float(v / total) for v in variance[:2]] + [0.0] * (2 - k)
+
+
+def pool_features(array: np.ndarray) -> np.ndarray:
+    """One vector per sample: spatial mean for [B, C, H, W], sequence mean for [B, T, D]."""
+    array = np.asarray(array, dtype=np.float32)
+    if array.ndim == 4:
+        return array.mean(axis=(2, 3))
+    if array.ndim == 3:
+        return array.mean(axis=1)
+    if array.ndim == 2:
+        return array
+    if array.ndim > 4:
+        return array.reshape(array.shape[0], array.shape[1], -1).mean(axis=2)
+    raise ViewError(f"cannot pool a tensor of shape {list(array.shape)} into per-sample vectors")
