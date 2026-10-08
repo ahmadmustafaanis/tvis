@@ -22,14 +22,15 @@ const R = { key: null, events: [], i: 0, playing: false, timer: null, speed: 1, 
 export function renderReplay(container) {
   const state = store.get();
   if (!state.allBatches) return clear(container, h("div", { class: "loading" }, "loading the recording…"));
-  const key = `${state.runId}:${R.gran}`;
+  const key = `${state.runId}:${listGran()}`;
   if (R.key !== key) {
     const previous = R.events[R.i];
-    R.events = buildEvents(state.allBatches, state.steps, R.gran);
+    R.events = buildEvents(state.allBatches, state.steps, listGran());
     R.i = previous ? Math.max(0, R.events.findIndex((e) => e.batch === previous.batch)) : 0;
     R.key = key;
     R.stackBatch = null;
   }
+  R.stops = stopsFor(R.events, R.gran);
   if (!R.dom || !container.contains(R.dom.root)) buildSkeleton(container);
   renderEventList();
   update();
@@ -50,6 +51,27 @@ function layerCalls(batch, gran) {
   );
 }
 
+/** The left list always shows every layer ("op": every call); only the step size changes. */
+const listGran = () => (R.gran === "op" ? "op" : "layer");
+
+/** Indices the transport stops at. Phase and batch stop at the *end* of each, so everything that
+ * happened in it (thumbnails, gradients) is visible when you land. */
+function stopsFor(events, gran) {
+  if (gran === "layer" || gran === "op") return events.map((_, i) => i);
+  const stops = [];
+  events.forEach((e, i) => {
+    const next = events[i + 1];
+    const boundary = !next || next.batch !== e.batch || (gran === "phase" && next.phase !== e.phase);
+    if (boundary) stops.push(i);
+  });
+  return stops;
+}
+
+function nextStop(direction) {
+  if (direction > 0) return R.stops.find((i) => i > R.i) ?? R.events.length - 1;
+  return [...R.stops].reverse().find((i) => i < R.i) ?? 0;
+}
+
 function buildEvents(batches, steps, gran) {
   const events = [];
   const lastOfStep = new Set(steps.map((s) => s.batches[s.batches.length - 1]));
@@ -58,19 +80,11 @@ function buildEvents(batches, steps, gran) {
     const layers = layerCalls(batch, gran);
     const loss = [...batch.calls].reverse().find((c) => c.kind === "loss");
     const opt = batch.calls.find((c) => c.kind === "optimizer");
-    if (gran === "batch") {
-      events.push({ ...base, kind: "batch", phase: "forward", label: `batch ${batch.index}` });
-      continue;
-    }
     events.push({ ...base, kind: "data", phase: "data", label: `load batch ${batch.index}` });
-    if (gran === "phase") events.push({ ...base, kind: "forward-all", phase: "forward", label: "forward pass" });
-    else for (const call of layers) events.push({ ...base, kind: "forward", phase: "forward", call, label: call.name });
+    for (const call of layers) events.push({ ...base, kind: "forward", phase: "forward", call, label: call.name });
     if (loss) events.push({ ...base, kind: "loss", phase: "loss", call: loss, label: loss.name });
-    if (gran === "phase") events.push({ ...base, kind: "backward-all", phase: "backward", label: "backward pass" });
-    else {
-      const back = layers.filter((c) => c.bwd_start_ms != null).sort((a, b) => a.bwd_start_ms - b.bwd_start_ms);
-      for (const call of back) events.push({ ...base, kind: "backward", phase: "backward", call, label: `∇ ${call.name}` });
-    }
+    const back = layers.filter((c) => c.bwd_start_ms != null).sort((a, b) => a.bwd_start_ms - b.bwd_start_ms);
+    for (const call of back) events.push({ ...base, kind: "backward", phase: "backward", call, label: `∇ ${call.name}` });
     if (lastOfStep.has(batch.index) || opt) events.push({ ...base, kind: "optimizer", phase: "optimizer", call: opt, label: opt ? `${opt.name}.step()` : "update" });
   }
   return events;
@@ -85,7 +99,7 @@ function go(i) {
 }
 
 function play() {
-  if (R.i >= R.events.length - 1) R.i = 0;
+  if (R.i >= R.events.length - 1) R.i = R.stops[0] ?? 0;
   R.playing = true;
   tick();
 }
@@ -99,9 +113,10 @@ function tick() {
     return update();
   }
   const event = R.events[R.i];
-  const dwell = (event.kind === "data" || event.kind === "loss" || event.kind === "optimizer" ? 1500 : 650) / R.speed;
+  const coarse = R.gran === "phase" || R.gran === "batch";
+  const dwell = (coarse ? 2200 : event.kind === "data" || event.kind === "loss" || event.kind === "optimizer" ? 1500 : 650) / R.speed;
   R.timer = setTimeout(() => {
-    R.i += 1;
+    R.i = nextStop(1);
     tick();
   }, dwell);
 }
@@ -127,8 +142,8 @@ export function replayKey(event) {
   if (event.key === " ") {
     event.preventDefault();
     toggle();
-  } else if (event.key === "ArrowRight") go(R.i + 1);
-  else if (event.key === "ArrowLeft") go(R.i - 1);
+  } else if (event.key === "ArrowRight") go(nextStop(1));
+  else if (event.key === "ArrowLeft") go(nextStop(-1));
   else if (event.key === "]") shiftSample(1);
   else if (event.key === "[") shiftSample(-1);
   else return false;
@@ -188,9 +203,9 @@ function buildSkeleton(container) {
         { class: "transport-row" },
         h("button", { class: "tbtn", title: "Restart", onclick: () => go(0) }, "⏮"),
         h("button", { class: "tbtn", title: "Previous phase", onclick: () => jumpPhase(-1) }, "⏪"),
-        h("button", { class: "tbtn", title: "Previous (←)", onclick: () => go(R.i - 1) }, "◀"),
+        h("button", { class: "tbtn", title: "Previous (←)", onclick: () => go(nextStop(-1)) }, "◀"),
         playBtn,
-        h("button", { class: "tbtn", title: "Next (→)", onclick: () => go(R.i + 1) }, "▶|"),
+        h("button", { class: "tbtn", title: "Next (→)", onclick: () => go(nextStop(1)) }, "▶|"),
         h("button", { class: "tbtn", title: "Next phase", onclick: () => jumpPhase(1) }, "⏩"),
         now,
         h("div", { style: { flex: 1 } }),
@@ -273,7 +288,7 @@ function update() {
 
 function renderStage(batch, event, sample) {
   const key = `${batch.index}:${sample}`;
-  const layers = layerCalls(batch, R.gran === "op" ? "op" : "layer");
+  const layers = layerCalls(batch, listGran());
   if (R.stackBatch !== key) {
     R.stackBatch = key;
     R.rows = new Map();
@@ -318,7 +333,7 @@ function renderStage(batch, event, sample) {
     for (let i = R.i; i >= 0 && R.events[i].batch === batch.index; i--) {
       if (R.events[i].kind === "backward") bwdDone.add(R.events[i].call.id);
     }
-    if (event.kind === "backward-all" || event.phase === "optimizer") layers.forEach((c) => c.bwd_start_ms != null && bwdDone.add(c.id));
+    if (event.phase === "optimizer") layers.forEach((c) => c.bwd_start_ms != null && bwdDone.add(c.id));
   }
   const gradNorms = layers.map((c) => R.rows.get(c.id).meta?.grad_stats?.norm || 0).filter((v) => v > 0);
   const maxLog = Math.log10(Math.max(...gradNorms, 1e-12));
@@ -327,7 +342,6 @@ function renderStage(batch, event, sample) {
     const r = R.rows.get(call.id);
     let fwdDone;
     if (event.kind === "forward") fwdDone = i <= fwdIndex;
-    else if (event.kind === "batch") fwdDone = true;
     else fwdDone = phaseRank >= phaseOrder.indexOf("forward") && event.kind !== "data";
     const isCur = event.call?.id === call.id;
     r.row.classList.toggle("pending", !fwdDone);
@@ -346,7 +360,7 @@ function renderStage(batch, event, sample) {
     }
     if (isCur) r.row.scrollIntoView({ block: "nearest" });
   });
-  renderResult(R.ioResult, batch, sample, phaseRank >= phaseOrder.indexOf("loss") || event.kind === "batch");
+  renderResult(R.ioResult, batch, sample, phaseRank >= phaseOrder.indexOf("loss"));
 }
 
 function renderInput(card, batch, sample) {
@@ -459,6 +473,6 @@ function renderDetail(batch, event, sample) {
     el,
     h("h2", {}, event.label),
     h("div", { class: "sub" }, `batch ${batch.index} · ${fmtMs(batch.timing?.total_ms)}`),
-    h("div", { class: "faint" }, event.kind === "backward-all" ? "Gradients flow from the loss back to the input; bars show ‖dL/d(output)‖ per layer." : "Every layer ran; thumbnails show the followed sample's activations."),
+    h("div", { class: "faint" }, "Select a layer on the left or in the model stack to see its output."),
   );
 }
