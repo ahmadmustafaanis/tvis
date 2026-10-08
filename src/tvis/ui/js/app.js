@@ -9,6 +9,7 @@ import { renderLayers } from "./layers.js";
 import { renderLoss } from "./loss.js";
 import { renderOverview } from "./overview.js";
 import { renderReplay, replayKey, stopReplay } from "./replay.js";
+import { renderScene3d, scene3dKey, stopScene3d } from "./scene3d.js";
 import { renderSamples } from "./samples.js";
 import { renderSource } from "./source.js";
 import { renderStep } from "./step.js";
@@ -20,6 +21,7 @@ import { renderWeights } from "./weights.js";
 
 const PAGES = {
   replay: { label: "▶ Replay", render: renderReplay },
+  scene3d: { label: "3D", render: renderScene3d },
   loss: { label: "Loss", render: renderLoss },
   weights: { label: "Weights", render: renderWeights },
   attention: { label: "Attention", render: renderAttention, insight: true, available: (s) => s.allBatches?.some((b) => attentionLayers(b).length) },
@@ -175,6 +177,7 @@ function renderPage() {
   $("explore").classList.toggle("hidden", !explore);
   $("page").classList.toggle("hidden", explore);
   if (s.page !== "replay") stopReplay();
+  if (s.page !== "scene3d") stopScene3d();
   if (explore) {
     clear($("page"));
     for (const view of ["header", "phasebar", "left", "tabs", "center", "inspector"]) RENDER[view]();
@@ -305,6 +308,7 @@ function bindStatic() {
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement || e.metaKey || e.ctrlKey) return;
     const s = store.get();
     if (s.page === "replay" && replayKey(e)) return;
+    if (s.page === "scene3d" && scene3dKey(e)) return;
     if (s.page !== "explore") return;
     const count = s.mode === "batch" ? s.meta?.batches_captured || 0 : s.steps.length;
     const current = s.mode === "batch" ? s.batchIndex : s.stepIndex;

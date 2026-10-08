@@ -52,7 +52,7 @@ export function stopReplay() {
 // ------------------------------------------------------------------------------------------
 // events
 // ------------------------------------------------------------------------------------------
-function layerCalls(batch, gran) {
+export function layerCalls(batch, gran) {
   const idx = index(batch);
   const isLeafModule = (c) => !(idx.children.get(c.id) || []).some((k) => k.kind === "module");
   const attentionOwners = new Set((batch.ops || []).filter((o) => o.attention).map((o) => o.call));
@@ -68,7 +68,7 @@ const listGran = () => (R.gran === "op" ? "op" : "layer");
 
 /** Indices the transport stops at. Phase and batch stop at the *end* of each, so everything that
  * happened in it (thumbnails, gradients) is visible when you land. */
-function stopsFor(events, gran) {
+export function stopsFor(events, gran) {
   if (gran === "layer" || gran === "op") return events.map((_, i) => i);
   const stops = [];
   events.forEach((e, i) => {
@@ -84,7 +84,7 @@ function nextStop(direction) {
   return [...R.stops].reverse().find((i) => i < R.i) ?? 0;
 }
 
-function buildEvents(batches, steps, gran) {
+export function buildEvents(batches, steps, gran) {
   const events = [];
   const lastOfStep = new Set(steps.map((s) => s.batches[s.batches.length - 1]));
   for (const batch of batches) {
