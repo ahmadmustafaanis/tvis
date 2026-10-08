@@ -34,6 +34,11 @@ const COOL = [
   [235, 250, 255],
 ];
 
+const VIEW_DIR = new THREE.Vector3(-5.5, 3.2, 8.5).normalize();
+const OVERVIEW_DIR = new THREE.Vector3(-0.12, 0.32, 1).normalize(); // near-frontal: the whole tunnel reads left to right
+const FOLLOW_DISTANCE = 11; // at a 16:9 view; narrower views back off so the same span stays visible
+const LOOK_AHEAD = 3.2; // look past the active slab so what comes next is on screen
+
 const S = {
   runKey: null,
   events: [],
@@ -52,6 +57,8 @@ const S = {
   textures: new Map(),
   selected: null,
 };
+
+if (new URLSearchParams(location.search).has("debug3d")) window.tvis3d = S; // for debugging the scene
 
 // ---------------------------------------------------------------------------------------------
 // page lifecycle
@@ -102,12 +109,15 @@ function buildGraph(batch) {
   const layers = layerCalls(batch, "layer");
   const layerIds = new Set(layers.map((c) => c.id));
   // a "unit" is a repeated block (blocks.0, blocks.1, … or a function called several times) that
-  // wraps two or more layers; units render as one slab until expanded
-  const signature = (c) => (c.kind === "module" ? `m:${c.cls}` : `f:${c.qualname || c.name}`);
+  // wraps two or more layers; units render as one slab until expanded (outermost unit wins)
+  // repeated = same class at the same position up to indices (blocks.0 … blocks.5 → "blocks.#")
+  const signature = (c) =>
+    c.kind === "module" ? `m:${c.cls}:${(c.module_path || c.name).replace(/\d+/g, "#")}` : `f:${c.qualname || c.name}`;
   const siblings = new Map();
   for (const c of batch.calls) {
     if (c.phase !== "forward" || (c.kind !== "module" && c.kind !== "function")) continue;
-    const key = `${c.parent}|${signature(c)}`;
+    // grouped by type wherever it's called from: NanoViT runs blocks[:-1] and blocks[-1] separately
+    const key = signature(c);
     siblings.set(key, (siblings.get(key) || 0) + 1);
   }
   const descendantLayers = (call) => {
@@ -124,7 +134,7 @@ function buildGraph(batch) {
   const isUnit = (c) =>
     c.phase === "forward" &&
     (c.kind === "module" || c.kind === "function") &&
-    siblings.get(`${c.parent}|${signature(c)}`) > 1 &&
+    siblings.get(signature(c)) > 1 &&
     descendantLayers(c) >= 2 &&
     !S.expanded.has(unitKey(c));
   const unitOf = (call) => {
@@ -238,8 +248,20 @@ function initThree() {
   scene.add(floor);
   const world = new THREE.Group();
   scene.add(world);
-  S.three = { renderer, scene, camera, controls, world, clock: new THREE.Clock(), raf: null, target: new THREE.Vector3(), flashUntil: 0 };
+  S.three = { renderer, scene, camera, controls, world, clock: new THREE.Clock(), raf: null, target: new THREE.Vector3(), flashUntil: 0, distance: FOLLOW_DISTANCE, viewDir: VIEW_DIR };
   S.dom.viewport.append(renderer.domElement);
+  // horizontal trackpad swipes / shift+wheel move along the model; vertical wheel still zooms
+  S.dom.viewport.addEventListener(
+    "wheel",
+    (e) => {
+      const dx = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.shiftKey ? e.deltaY : 0;
+      if (!dx) return;
+      e.preventDefault();
+      e.stopPropagation();
+      panTo(controls.target.x + dx * 0.02);
+    },
+    { capture: true, passive: false },
+  );
   new ResizeObserver(resize).observe(S.dom.viewport);
   resize();
   renderer.domElement.addEventListener("click", onClick);
@@ -295,7 +317,7 @@ function buildWorld(graph, sample) {
   graph.input.rotation.y = Math.PI / 2;
   graph.input.position.set(-3, 0, 0);
   world.add(graph.input);
-  graph.output = textSprite("", "#ffffff", 1.2);
+  graph.output = textSprite("", "#ffffff", 0.8);
   graph.output.position.set(x + 1.6, 1.2, 0);
   world.add(graph.output);
   // edges: straight to the next slab, arcs for skips (residual-style dataflow)
@@ -329,14 +351,24 @@ function textSprite(text, color, scale = 0.7) {
   canvas.height = 96;
   const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas), transparent: true, depthWrite: false }));
   sprite.scale.set(scale * 5.3, scale, 1);
-  sprite.userData.setText = (t, c = color) => {
+  // optional second, dimmer line; both lines shrink to fit the canvas instead of being clipped
+  sprite.userData.setText = (t, c = color, sub = "") => {
     const ctx = canvas.getContext("2d");
     ctx.clearRect(0, 0, 512, 96);
-    ctx.font = "500 40px -apple-system, Inter, Segoe UI, sans-serif";
-    ctx.fillStyle = c;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(t.length > 30 ? `${t.slice(0, 29)}…` : t, 256, 48);
+    const line = (str, size, weight, y, fill) => {
+      ctx.font = `${weight} ${size}px -apple-system, Inter, Segoe UI, sans-serif`;
+      const fit = Math.min(size, (size * 496) / Math.max(1, ctx.measureText(str).width));
+      ctx.font = `${weight} ${fit}px -apple-system, Inter, Segoe UI, sans-serif`;
+      ctx.fillStyle = fill;
+      ctx.fillText(str, 256, y);
+    };
+    const main = t.length > 30 ? `${t.slice(0, 29)}…` : t;
+    if (sub) {
+      line(main, 34, 500, 30, c);
+      line(sub, 26, 400, 72, "#8b95a7");
+    } else line(main, 40, 500, 48, c);
     sprite.material.map.needsUpdate = true;
   };
   sprite.userData.setText(text);
@@ -520,6 +552,7 @@ function go(i) {
 function play() {
   if (S.i >= S.events.length - 1) S.i = 0;
   S.playing = true;
+  setFollow(true); // playing re-engages the camera after you've panned around
   tick();
 }
 
@@ -558,7 +591,19 @@ function shiftSample(d) {
 
 function setFollow(on) {
   S.follow = on;
+  if (on && S.three) S.three.viewDir = VIEW_DIR;
+  if (on && S.events.length && S.three) applyFocus();
   if (S.dom) S.dom.followBtn.classList.toggle("on", on);
+}
+
+function applyFocus() {
+  const event = S.events[S.i];
+  const active = nodeOfEvent(event);
+  const graph = S.graph;
+  if (!graph) return;
+  const focus = active || (event.kind === "data" ? null : graph.nodes[graph.nodes.length - 1]);
+  S.three.target.set((focus ? focus.x : -3) + LOOK_AHEAD, 0, 0);
+  S.three.distance = followDistance();
 }
 
 function currentBatch() {
@@ -582,6 +627,16 @@ function buildDom(container) {
   const sampleNav = h("span", { class: "sample-nav" });
   const viewport = h("div", { class: "s3-viewport" });
   const hud = h("div", { class: "s3-hud" });
+  const track = h("input", {
+    type: "range",
+    class: "s3-track",
+    min: -4,
+    max: 10,
+    step: 0.1,
+    value: 0,
+    title: "Slide along the model (or swipe sideways / shift+scroll)",
+    oninput: (e) => panTo(Number(e.target.value)),
+  });
   const panel = h("div", { class: "s3-panel hidden" });
   const root = h(
     "div",
@@ -603,15 +658,16 @@ function buildDom(container) {
         gran,
         speed,
         followBtn,
+        h("button", { class: "chip", title: "Fit the whole model on screen", onclick: overview }, "overview"),
         h("button", { class: "chip", title: "Expand or collapse every repeated block", onclick: toggleExpandAll }, "blocks ⇄"),
       ),
     ),
     h("div", { class: "s3-body" }, viewport, panel),
     hud,
   );
-  viewport.append(hud);
+  viewport.append(hud, h("div", { class: "s3-track-wrap" }, h("span", {}, "input"), track, h("span", {}, "output")));
   clear(container, root);
-  S.dom = { root, now, playBtn, gran, sampleNav, viewport, hud, panel, followBtn };
+  S.dom = { root, now, playBtn, gran, sampleNav, viewport, hud, panel, followBtn, track };
 }
 
 function syncControls() {
@@ -646,9 +702,10 @@ function update() {
     S.graphKey = key;
     S.stops = computeStops();
     if (!S.positioned) {
-      S.three.camera.position.set(-6, 4.5, Math.max(10, S.graph.length * 0.25));
+      placeCamera(-3 + LOOK_AHEAD + 2, followDistance(), true); // the input plus the first layers
       S.positioned = true;
     }
+    S.dom.track.max = String(Math.max(1, S.graph.length));
   }
   S.dom.playBtn.textContent = S.playing ? "❚❚" : "▶";
   clear(
@@ -747,15 +804,18 @@ function applyEvent(event, batch, sample) {
   const s = batch.samples?.[sample];
   if (phaseRank >= 2 && s) {
     const p = s.prediction || {};
-    const label = `${p.name ?? p.text ?? p.id ?? "?"} ${p.p != null ? `${Math.round(p.p * 100)}%` : ""}  ·  loss ${fmtNum(s.loss, 3)}`;
-    graph.output.userData.setText(label, p.correct === false ? "#ff8a8a" : p.correct ? "#8af0b8" : "#ffffff");
+    // a language model's prediction is a whole sequence: show only its last few words
+    const words = p.name == null && p.text != null ? p.text.trim().split(/\s+/) : null;
+    const predicted = words ? `${words.length > 4 ? "… " : ""}${words.slice(-4).join(" ")}` : `${p.name ?? p.id ?? "?"}${p.p != null ? ` ${Math.round(p.p * 100)}%` : ""}`;
+    graph.output.userData.setText(predicted, p.correct === false ? "#ff8a8a" : p.correct ? "#8af0b8" : "#ffffff", `loss ${fmtNum(s.loss, 3)}`);
   } else graph.output.userData.setText("");
   if (S.follow) {
     const focus = active || (event.kind === "data" ? null : graph.nodes[graph.nodes.length - 1]);
-    S.three.target.set(focus ? focus.x : -3, 0, 0);
+    S.three.target.set((focus ? focus.x : -3) + LOOK_AHEAD, 0, 0);
+    S.three.distance = followDistance();
   }
   S.hudText = event.kind === "loss" ? `batch loss ${fmtNum(lossValue(batch), 4)}` : "";
-  S.dom.hud.textContent = S.hudText || "drag to orbit · scroll to zoom · click a slab to inspect it · ▸ marks collapsed blocks (click to expand)";
+  S.dom.hud.textContent = S.hudText || "drag to orbit · scroll to zoom · swipe sideways or shift+scroll to move along · click a slab to inspect · ▸ = collapsed block";
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -780,12 +840,16 @@ function startLoop() {
       }
       animateParticles(t);
     }
+    if (!S.follow && performance.now() < (S.three.glideUntil || 0)) {
+      controls.target.lerp(target, 0.08);
+      camera.position.lerp(target.clone().addScaledVector(S.three.viewDir, S.three.distance), 0.08);
+    }
     if (S.follow) {
       controls.target.lerp(target, 0.06);
-      const want = new THREE.Vector3(target.x - 5.5, 3.2, 8.5);
-      camera.position.lerp(want, 0.04);
+      camera.position.lerp(target.clone().addScaledVector(S.three.viewDir, S.three.distance), 0.04);
     }
     controls.update();
+    if (S.dom.track && document.activeElement !== S.dom.track) S.dom.track.value = String(controls.target.x);
     renderer.render(scene, camera);
   };
   frame();
@@ -809,6 +873,49 @@ function animateParticles(t) {
   points.geometry.attributes.position.needsUpdate = true;
 }
 
+/** Move the view along the tunnel, keeping the current viewing angle and zoom. */
+function panTo(x) {
+  const { camera, controls } = S.three;
+  const lo = -4;
+  const hi = (S.graph?.length || 0) + 2;
+  const nx = clamp(x, lo, hi);
+  const dx = nx - controls.target.x;
+  controls.target.x += dx;
+  camera.position.x += dx;
+  setFollow(false);
+}
+
+/** Put the camera at the standard angle looking at x from `distance`. */
+function followDistance() {
+  const aspect = S.three?.camera.aspect || 1.6;
+  return FOLLOW_DISTANCE * Math.max(1, 1.7 / aspect);
+}
+
+function placeCamera(x, distance, immediate = false) {
+  const { camera, controls, target } = S.three;
+  target.set(x, 0, 0);
+  S.three.distance = distance;
+  if (immediate) {
+    controls.target.copy(target);
+    camera.position.copy(target.clone().addScaledVector(S.three.viewDir, distance));
+  }
+}
+
+/** Fit the whole model, input to output, on screen, seen almost from the front. */
+function overview() {
+  if (!S.graph) return;
+  const { camera } = S.three;
+  const xmin = -4.5;
+  const xmax = S.graph.length + 2.5;
+  const vfov = (camera.fov * Math.PI) / 180;
+  const hfov = 2 * Math.atan(Math.tan(vfov / 2) * camera.aspect);
+  const distance = clamp(((xmax - xmin) / 2 / Math.tan(hfov / 2)) * 1.08, 8, 600);
+  setFollow(false);
+  S.three.viewDir = OVERVIEW_DIR;
+  placeCamera((xmin + xmax) / 2, distance);
+  S.three.glideUntil = performance.now() + 1600;
+}
+
 function onClick(e) {
   if (!S.graph) return;
   const rect = S.three.renderer.domElement.getBoundingClientRect();
@@ -824,8 +931,7 @@ function onClick(e) {
   }
   S.selected = node.call.id;
   setFollow(false);
-  S.three.target.set(node.x, 0, 0);
-  S.three.controls.target.set(node.x, 0, 0);
+  panTo(node.x);
   update();
 }
 

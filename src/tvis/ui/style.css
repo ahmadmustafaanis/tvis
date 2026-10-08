@@ -584,7 +584,7 @@ table.raw tr th:first-child { position: sticky; left: 0; background: var(--bg-el
 .s3-body { display: grid; grid-template-columns: minmax(0, 1fr) auto; min-height: 0; }
 .s3-viewport { position: relative; min-height: 0; overflow: hidden; background: #07090d; }
 .s3-viewport canvas { display: block; width: 100%; height: 100%; cursor: grab; }
-.s3-hud { position: absolute; left: 14px; bottom: 12px; color: #9aa3b2; font-size: 12px; pointer-events: none; text-shadow: 0 1px 2px #000; }
+.s3-hud { position: absolute; left: 14px; right: 14px; top: 10px; color: #9aa3b2; font-size: 12px; pointer-events: none; text-shadow: 0 1px 2px #000; }
 .s3-panel { width: min(420px, 40vw); overflow: auto; border-left: 1px solid var(--border); background: var(--bg-elev); padding: 14px 16px 30px; }
 @media (max-width: 980px) {
   .s3 { height: auto; }
@@ -592,3 +592,5 @@ table.raw tr th:first-child { position: sticky; left: 0; background: var(--bg-el
   .s3-viewport { height: 62vh; }
   .s3-panel { width: auto; border-left: 0; border-top: 1px solid var(--border); }
 }
+.s3-track-wrap { position: absolute; left: 50%; transform: translateX(-50%); bottom: 14px; width: min(560px, 80%); display: flex; align-items: center; gap: 10px; color: #9aa3b2; font-size: 11px; background: rgba(7, 9, 13, 0.6); padding: 6px 12px; border-radius: 999px; }
+.s3-track { flex: 1; accent-color: #ff9a3c; }
