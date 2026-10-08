@@ -18,6 +18,7 @@ from torch.overrides import TorchFunctionMode
 
 from tvis.capture.project import is_tvis_file
 from tvis.capture.stats import dtype_name
+from tvis.capture.values import capture_value
 
 if TYPE_CHECKING:
     from tvis.capture.session import Session
@@ -68,16 +69,20 @@ class OpRecorder(TorchFunctionMode):
             return
         s = self.session
         assert s.batch is not None
-        s.batch.ops.append(
-            {
-                "call": s.stack[-1].id if s.stack else None,
-                "file": site[0],
-                "line": site[1],
-                "op": _op_name(func),
-                "shapes": [list(t.shape) for t in outputs],
-                "dtype": dtype_name(outputs[0].dtype),
-            }
-        )
+        name = _op_name(func)
+        record = {
+            "call": s.stack[-1].id if s.stack else None,
+            "file": site[0],
+            "line": site[1],
+            "op": name,
+            "shapes": [list(t.shape) for t in outputs],
+            "dtype": dtype_name(outputs[0].dtype),
+        }
+        if name == "softmax" and _looks_like_attention(outputs[0]):
+            with s.internal():
+                record["value"] = capture_value(outputs[0], s.registry, hook_grad=False)
+            record["attention"] = True
+        s.batch.ops.append(record)
 
     def _site(self, frame: Any) -> tuple[str, int] | None:
         for _ in range(_MAX_WALK):
@@ -107,6 +112,11 @@ class OpRecorder(TorchFunctionMode):
             result = (_PROJECT, rel) if rel is not None else (_OPAQUE, None)
         self._kind[code] = result
         return result
+
+
+def _looks_like_attention(t: torch.Tensor) -> bool:
+    """Softmax weights over keys: [B, H, Tq, Tk] or square [B, T, T]."""
+    return t.dim() == 4 or (t.dim() == 3 and t.shape[-1] == t.shape[-2] and t.shape[-1] > 1)
 
 
 def _tensor_outputs(result: Any) -> list[torch.Tensor]:

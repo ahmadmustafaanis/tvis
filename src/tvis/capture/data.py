@@ -23,8 +23,9 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
 from tvis.capture import calls as K
+from tvis.capture import gradcam
 from tvis.capture.session import functools_wraps
-from tvis.capture.values import iter_tensor_refs
+from tvis.capture.values import capture_value, iter_tensor_refs
 
 if TYPE_CHECKING:
     from tvis.capture.session import Session
@@ -260,7 +261,12 @@ class DataInstrumentation:
                         if legacy in bound.arguments:
                             bound.arguments[legacy] = None
                     bound.arguments["reduction"] = "none"
-                    call.extra["_per_element"] = original(*bound.args, **bound.kwargs).detach()
+                    per_element = original(*bound.args, **bound.kwargs).detach()
+                    call.extra["_per_element"] = per_element
+                    call.extra["per_element"] = capture_value(per_element, session.registry, hook_grad=False)
+                if session.config.gradcam:
+                    with session.guard("grad-cam"), session.internal():
+                        gradcam.compute(session, call, input, target)
             session.close_call(call, outputs=[("loss", out)])
             return out
 

@@ -57,6 +57,7 @@ class CaptureConfig:
     max_elems: int = 2_000_000
     trace_functions: bool = True
     record_ops: bool = True
+    gradcam: bool = True
     script: str | None = None
     argv: list[str] = field(default_factory=list)
 
@@ -200,6 +201,15 @@ class Session:
             self._tl.depth = depth
             if start is not None:
                 self.timer.add_overhead(start, self.timer.mark())
+
+    @contextlib.contextmanager
+    def suppressed_grad_hooks(self) -> Iterator[None]:
+        previous = self.registry.suppress_grad_hooks
+        self.registry.suppress_grad_hooks = True
+        try:
+            yield
+        finally:
+            self.registry.suppress_grad_hooks = previous
 
     def in_internal(self) -> bool:
         return getattr(self._tl, "depth", 0) > 0
@@ -419,6 +429,7 @@ class Session:
             from tvis.capture.decode import build_samples
 
             samples = build_samples(self, batch, by_tid, batch_size)
+            self._remember_vocab()
             tensor_arrivals = {r.tid: r.grad_arrival for r in records if r.grad_arrival is not None}
             param_marks = _param_marks_by_call(batch)
             calls_json = [
@@ -445,6 +456,15 @@ class Session:
                 },
             )
         self.batches_written += 1
+
+    def _remember_vocab(self, limit: int = 100_000) -> None:
+        """Token strings by id, so the viewer can label tokens and embedding rows."""
+        if "vocab" in self.data_info or self.tokenizer is None:
+            return
+        with contextlib.suppress(Exception):
+            size = len(self.tokenizer)
+            if size <= limit:
+                self.data_info["vocab"] = self.tokenizer.convert_ids_to_tokens(list(range(size)))
 
     def _save_record(self, batch_index: int, record: TensorRecord) -> None:
         if record.value is not None:
@@ -672,6 +692,7 @@ class Session:
                 "max_batches": cfg.max_batches,
                 "trace_functions": cfg.trace_functions,
                 "record_ops": cfg.record_ops,
+                "gradcam": cfg.gradcam,
             },
             "env": _environment(),
             "clock": self.timer.kind,

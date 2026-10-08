@@ -36,6 +36,9 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--max-batches", type=int, default=64, help="safety cap on captured batches")
     run.add_argument("--no-functions", action="store_true", help="don't trace project functions")
     run.add_argument("--no-ops", action="store_true", help="don't record line-level ops")
+    run.add_argument(
+        "--no-gradcam", action="store_true", help="skip the extra gradient pass that computes Grad-CAM"
+    )
     run.add_argument("script", type=Path)
     run.add_argument("script_args", nargs=argparse.REMAINDER)
 
@@ -108,6 +111,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         max_batches=args.max_batches,
         trace_functions=not args.no_functions,
         record_ops=not args.no_ops,
+        gradcam=not args.no_gradcam,
     )
     try:
         result = runner.run(options)

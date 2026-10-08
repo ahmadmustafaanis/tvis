@@ -28,6 +28,7 @@ class RunOptions:
     max_batches: int = 64
     trace_functions: bool = True
     record_ops: bool = True
+    gradcam: bool = True
 
 
 @dataclass
@@ -62,6 +63,7 @@ def run(options: RunOptions) -> RunResult:
         max_elems=options.max_elems,
         trace_functions=options.trace_functions,
         record_ops=options.record_ops,
+        gradcam=options.gradcam,
         script=str(script),
         argv=list(options.script_args),
     )

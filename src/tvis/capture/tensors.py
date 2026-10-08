@@ -109,6 +109,7 @@ class TensorRegistry:
         self._by_key: dict[tuple[int, int], TensorRecord] = {}
         self._refs: dict[str, Any] = {}  # keeps captured tensors alive so id() stays unique
         self.records: dict[str, TensorRecord] = {}
+        self.suppress_grad_hooks = False  # set during tvis's own extra gradient passes (Grad-CAM)
         self.batch_index = 0
         self.phase: str | None = None
 
@@ -164,6 +165,8 @@ class TensorRegistry:
 
     def _make_grad_hook(self, record: TensorRecord) -> Callable[[torch.Tensor], None]:
         def hook(grad: torch.Tensor) -> None:
+            if self.suppress_grad_hooks:
+                return
             arrival = self._mark()
             with self._guard("grad hook"), self._internal():
                 if record.grad_arrival is None:
@@ -173,6 +176,10 @@ class TensorRegistry:
             # returning None leaves the gradient untouched
 
         return hook
+
+    def live_tensor(self, tid: str) -> Any:
+        """The original (graph-attached) tensor behind a record, while its batch is open."""
+        return self._refs.get(tid)
 
     # -- batch lifecycle -----------------------------------------------------------------------
     def take_batch(self, batch_index: int) -> list[TensorRecord]:

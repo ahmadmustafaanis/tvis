@@ -103,3 +103,29 @@ def line_of(func, needle: str) -> int:
         if needle in text:
             return start + offset
     raise AssertionError(f"{needle!r} not found in {func.__name__}")
+
+
+class SmallConvNet(nn.Module):
+    def __init__(self, n_classes: int = 3, dropout: float = 0.0):
+        super().__init__()
+        self.conv1 = nn.Conv2d(3, 4, 3, padding=1)
+        self.bn1 = nn.BatchNorm2d(4)
+        self.conv2 = nn.Conv2d(4, 6, 3, padding=1)
+        self.drop = nn.Dropout(dropout)
+        self.fc = nn.Linear(6, n_classes)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = F.relu(self.bn1(self.conv1(x)))
+        x = F.relu(self.conv2(x))
+        return self.fc(self.drop(x.mean(dim=(2, 3))))
+
+
+def make_image_batches(n: int, batch_size: int = 4, size: int = 8, n_classes: int = 3, seed: int = 0):
+    gen = torch.Generator().manual_seed(seed)
+    return [
+        (
+            torch.randn(batch_size, 3, size, size, generator=gen),
+            torch.randint(n_classes, (batch_size,), generator=gen),
+        )
+        for _ in range(n)
+    ]
