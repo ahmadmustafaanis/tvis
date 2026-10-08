@@ -1,6 +1,7 @@
 // Right panel: details of the selected call or parameter.
 
-import { index, tensorRefs } from "./model.js";
+import { layerView } from "./layerview.js";
+import { firstOutput, index, tensorRefs } from "./model.js";
 import { store } from "./store.js";
 import { tensorCard } from "./tensorview.js";
 import { badge, clear, fmtMs, fmtNum, fmtShape, h } from "./util.js";
@@ -46,6 +47,21 @@ export function renderInspector(title, body) {
   if (call.kind === "tokenize") parts.push(tokensBlock(call, state.sample));
   if (call.kind === "optimizer") parts.push(hyperBlock(call));
   if (call.kind === "loss" && call.extra?.per_sample_loss) parts.push(perSampleLoss(batch));
+  if ((call.kind === "module" || call.kind === "function") && firstOutput(call)) {
+    const hasGrad = batch.tensors[firstOutput(call).tid]?.grad_stats != null;
+    const slot = h("div", {});
+    const show = (grad) => {
+      clear(
+        slot,
+        hasGrad
+          ? h("div", { class: "seg", style: { marginBottom: "8px" } }, [["Output", false], ["Gradient", true]].map(([l, g]) => h("button", { class: g === grad ? "on" : "", onclick: () => show(g) }, l)))
+          : null,
+        layerView({ run: state.runId, batch, call, sample: state.sample ?? 0, grad, state }),
+      );
+    };
+    show(false);
+    parts.push(h("div", { class: "subhead" }, `What this layer did${state.sample == null ? " (sample #0)" : ""}`), slot);
+  }
   parts.push(valuesBlock("Inputs", call.inputs, batch, state));
   parts.push(valuesBlock("Outputs", call.outputs, batch, state));
   clear(body, h("div", { class: "insp" }, parts));

@@ -134,3 +134,29 @@ export function followableSamples(batch) {
   }
   return { total, limit: Math.max(1, limit) };
 }
+
+/** For token sequences that are a prefix (CLS/registers) plus a square patch grid (ViT). */
+export function patchGrid(tokens) {
+  for (let prefix = 0; prefix <= 8 && prefix < tokens; prefix++) {
+    const grid = Math.round(Math.sqrt(tokens - prefix));
+    if (grid > 1 && grid * grid === tokens - prefix) return { prefix, grid };
+  }
+  return null;
+}
+
+/** The followed sample's model input, when it is an image ([B, 1|3, H, W]). */
+export function imageInput(batch, sample) {
+  const s = batch?.samples?.[sample];
+  const meta = s?.input ? batch.tensors[s.input.tid] : null;
+  return meta && meta.shape.length === 4 && [1, 3].includes(meta.shape[1]) ? s.input : null;
+}
+
+export function isDescendant(batch, callId, ancestorId) {
+  const idx = index(batch);
+  let call = idx.byId.get(callId);
+  while (call) {
+    if (call.id === ancestorId) return true;
+    call = call.parent != null ? idx.byId.get(call.parent) : null;
+  }
+  return false;
+}

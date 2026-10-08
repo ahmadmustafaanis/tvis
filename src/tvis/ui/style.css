@@ -556,3 +556,25 @@ svg.chart .step-band { fill: var(--bg-elev-2); }
   .lrow { grid-template-columns: 22px minmax(0, 1fr) 56px 70px; }
   .lrow .shp { display: none; }
 }
+
+/* ---------- layer view (On image · Neurons · Stats) ---------- */
+.layerview { margin-bottom: 10px; }
+.lv-row { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; }
+.lv-caption { flex: 1; min-width: 160px; font-size: 12.5px; display: flex; flex-direction: column; gap: 6px; }
+.neuron-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(58px, 1fr)); gap: 6px; margin: 4px 0 6px; }
+.neuron { display: flex; flex-direction: column; align-items: center; gap: 2px; cursor: pointer; border: 1px solid transparent; border-radius: 6px; padding: 3px; }
+.neuron:hover { border-color: var(--border-strong); }
+.neuron.on { border-color: var(--accent); background: var(--accent-soft); }
+.neuron canvas { width: 100%; aspect-ratio: 1; image-rendering: pixelated; border-radius: 3px; background: var(--bg-elev-2); }
+.neuron span { font-family: var(--mono); font-size: 10px; color: var(--text-faint); }
+canvas.bars { width: 100%; height: 120px; display: block; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; }
+.raw-wrap { overflow: auto; max-height: 380px; border: 1px solid var(--border); border-radius: 6px; }
+table.raw { border-collapse: collapse; font-family: var(--mono); font-size: 10px; font-variant-numeric: tabular-nums; }
+table.raw td { padding: 2px 4px; text-align: right; border: 1px solid var(--bg); white-space: nowrap; color: var(--text); }
+table.raw th { padding: 2px 4px; color: var(--text-faint); font-weight: 500; position: sticky; top: 0; background: var(--bg-elev); }
+table.raw tr th:first-child { position: sticky; left: 0; background: var(--bg-elev); }
+
+/* ---------- attention page: image beside the map ---------- */
+.attn-layout { display: grid; grid-template-columns: minmax(280px, 340px) minmax(0, 1fr); gap: 14px; align-items: start; }
+.attn-layout > .sticky { position: sticky; top: 12px; }
+@media (max-width: 1100px) { .attn-layout { grid-template-columns: minmax(0, 1fr); } .attn-layout > .sticky { position: static; } }

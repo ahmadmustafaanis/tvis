@@ -1,7 +1,7 @@
 // Attention page: where each token looks, per layer and head, plus attention rollout.
 
 import { api } from "./api.js";
-import { paintOverlay } from "./gradcam.js";
+import { paintOverlay } from "./overlay.js";
 import { followableSamples, index } from "./model.js";
 import { store } from "./store.js";
 import { colorFor } from "./tensorview.js";
@@ -67,8 +67,9 @@ export function renderAttention(container) {
             )
           : null,
       ),
-      h("div", { class: "card" }, plot, readout),
-      h("div", { id: "attn-image" }),
+      patchLayout(batch, sample, layer.shape[layer.shape.length - 1])
+        ? h("div", { class: "attn-layout" }, h("div", { class: "sticky", id: "attn-image" }), h("div", { class: "card" }, plot, readout))
+        : h("div", {}, h("div", { class: "card" }, plot, readout), h("div", { id: "attn-image" })),
       A.view === "rollout" ? h("div", { class: "hint", style: { marginTop: "8px" } }, "Rollout multiplies (½·A + ½·I) across layers (heads averaged) to estimate how much each output position draws on each input token overall.") : null,
     ),
   );
@@ -153,9 +154,13 @@ async function draw(plot, readout, batch, layers, sample, state) {
   const T = matrix[0].length;
   const labels = await tokenLabels(batch, sample, state, T);
   const qLabels = matrix.length === T ? labels : Array.from({ length: matrix.length }, (_, i) => String(i));
-  const cell = Math.max(14, Math.min(34, Math.floor(560 / T)));
-  const left = 90;
-  const top = 80;
+  // fit the whole map in the card: shrink cells for long sequences and thin out the labels
+  const left = 70;
+  const top = 64;
+  const available = Math.max(240, (plot.clientWidth || 600) - left - 16);
+  const availableHeight = Math.max(240, window.innerHeight - 300);
+  const cell = Math.max(4, Math.min(34, Math.floor(available / T), Math.floor(availableHeight / matrix.length)));
+  const labelEvery = Math.max(1, Math.ceil(11 / cell));
   const canvas = h("canvas", {});
   const dpr = window.devicePixelRatio || 1;
   const width = left + cell * T + 10;
@@ -176,11 +181,12 @@ async function draw(plot, readout, batch, layers, sample, state) {
     });
   });
   ctx.fillStyle = cssVar("--text-muted");
-  ctx.font = `${Math.min(12, cell - 3)}px ${cssVar("--mono")}`;
+  ctx.font = `${Math.max(9, Math.min(12, cell - 3))}px ${cssVar("--mono")}`;
   ctx.textAlign = "right";
   ctx.textBaseline = "middle";
-  qLabels.forEach((label, q) => ctx.fillText(label.slice(0, 12), left - 6, top + q * cell + cell / 2));
+  qLabels.forEach((label, q) => q % labelEvery === 0 && ctx.fillText(label.slice(0, 10), left - 6, top + q * cell + cell / 2));
   labels.forEach((label, k) => {
+    if (k % labelEvery) return;
     ctx.save();
     ctx.translate(left + k * cell + cell / 2, top - 6);
     ctx.rotate(-Math.PI / 3);
@@ -219,9 +225,9 @@ async function drawPatchOverlay(batch, sample, state, matrix, qLabels) {
     slot,
     h(
       "div",
-      { class: "card", style: { marginTop: "14px" } },
+      { class: "card", style: { marginTop: slot.classList.contains("sticky") ? "0" : "14px" } },
       h("h3", {}, `Where "${qLabels[q]}" looks in the image`),
-      h("div", { class: "hint" }, `Attention from query ${q} to the ${layout.grid}×${layout.grid} patch tokens${layout.prefix ? ` (${layout.prefix} prefix token${layout.prefix > 1 ? "s" : ""} — CLS/registers — left out)` : ""}. Click a row of the map above to pick another query.`),
+      h("div", { class: "hint" }, `Attention from query ${q} to the ${layout.grid}×${layout.grid} patch tokens${layout.prefix ? ` (${layout.prefix} prefix token${layout.prefix > 1 ? "s" : ""} — CLS/registers — left out)` : ""}. Click a row of the map to pick another query.`),
       canvas,
     ),
   );

@@ -5,6 +5,7 @@ import { api } from "./api.js";
 import { firstOutput, followableSamples, index, lossValue } from "./model.js";
 import { samplePipeline } from "./samples.js";
 import { store } from "./store.js";
+import { layerView } from "./layerview.js";
 import { drawHeat, drawImage, tensorCard } from "./tensorview.js";
 import { clear, fmtMs, fmtNum, fmtShape, h, phaseColor } from "./util.js";
 
@@ -54,8 +55,11 @@ export function stopReplay() {
 function layerCalls(batch, gran) {
   const idx = index(batch);
   const isLeafModule = (c) => !(idx.children.get(c.id) || []).some((k) => k.kind === "module");
+  const attentionOwners = new Set((batch.ops || []).filter((o) => o.attention).map((o) => o.call));
   return batch.calls.filter(
-    (c) => c.phase === "forward" && (c.kind === "function" || (c.kind === "module" && (gran === "op" || isLeafModule(c)))),
+    (c) =>
+      c.phase === "forward" &&
+      (c.kind === "function" || (c.kind === "module" && (gran === "op" || isLeafModule(c) || attentionOwners.has(c.id)))),
   );
 }
 
@@ -447,7 +451,7 @@ function renderDetail(batch, event, sample) {
       grad
         ? h("div", { class: "faint", style: { marginBottom: "8px" } }, "Gradient of the loss with respect to this layer's output, for the followed sample.")
         : h("div", { class: "faint", style: { marginBottom: "8px" } }, "What this layer produced for the followed sample."),
-      meta ? tensorCard({ run: state.runId, ref: out, meta, name: grad ? "dL/d(output)" : "output", sample, grad, open: true }) : h("div", { class: "faint" }, "no tensor output"),
+      meta ? layerView({ run: state.runId, batch, call, sample, grad, state }) : h("div", { class: "faint" }, "no tensor output"),
       call.inputs?.length ? h("div", { class: "subhead" }, "inputs") : null,
       (call.inputs || []).flatMap((e) => (e.value?.kind === "tensor" ? [tensorCard({ run: state.runId, ref: e.value, meta: batch.tensors[e.value.tid], name: e.name, sample, grad })] : [])),
     );
