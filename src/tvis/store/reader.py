@@ -73,6 +73,12 @@ class Run:
             raise RunNotFound(f"batch {index}")
         return _read_json(path)
 
+    def batch_mtime(self, index: int) -> float:
+        path = self._batch_dir(index) / schema.BATCH_FILE
+        if not path.is_file():
+            raise RunNotFound(f"batch {index}")
+        return path.stat().st_mtime
+
     def array(self, batch_index: int, tid: str, grad: bool = False) -> np.ndarray:
         name = schema.grad_array_name(tid) if grad else schema.value_array_name(tid)
         path = self._batch_dir(batch_index) / schema.ARRAYS_DIR / schema.safe_relpath(name)
