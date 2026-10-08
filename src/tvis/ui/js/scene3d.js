@@ -634,7 +634,7 @@ function buildDom(container) {
     max: 10,
     step: 0.1,
     value: 0,
-    title: "Slide along the model (or swipe sideways / shift+scroll)",
+    title: "Scroll along the model (or swipe sideways / shift+scroll)",
     oninput: (e) => panTo(Number(e.target.value)),
   });
   const panel = h("div", { class: "s3-panel hidden" });
@@ -665,7 +665,7 @@ function buildDom(container) {
     h("div", { class: "s3-body" }, viewport, panel),
     hud,
   );
-  viewport.append(hud, h("div", { class: "s3-track-wrap" }, h("span", {}, "input"), track, h("span", {}, "output")));
+  viewport.append(hud, h("div", { class: "s3-track-wrap" }, h("span", {}, "scroll"), track));
   clear(container, root);
   S.dom = { root, now, playBtn, gran, sampleNav, viewport, hud, panel, followBtn, track };
 }
