@@ -31,6 +31,14 @@ export function renderReplay(container) {
     R.stackBatch = null;
   }
   R.stops = stopsFor(R.events, R.gran);
+  const focus = state.replayFocus;
+  if (focus) {
+    state.replayFocus = null; // consumed (set directly: no re-render needed for this bookkeeping)
+    const target = R.events.findIndex((e) => e.batch === focus.batch && e.kind === focus.kind);
+    const fallback = R.events.findIndex((e) => e.batch === focus.batch);
+    pause();
+    R.i = Math.max(0, target >= 0 ? target : fallback);
+  }
   if (!R.dom || !container.contains(R.dom.root)) buildSkeleton(container);
   renderEventList();
   update();
@@ -256,7 +264,9 @@ function update() {
   if (!R.dom || !R.events.length) return;
   const event = R.events[R.i];
   const batch = currentBatch();
-  const sample = Math.min(store.get().sample ?? 0, sampleCount() - 1);
+  const requested = store.get().sample ?? 0;
+  const sample = Math.min(requested, sampleCount() - 1);
+  R.unstored = requested > sample ? requested : null;
   R.dom.playBtn.textContent = R.playing ? "❚❚" : "▶";
   R.dom.head.style.left = `${(R.i / Math.max(1, R.events.length - 1)) * 100}%`;
   clear(
@@ -287,7 +297,7 @@ function update() {
 }
 
 function renderStage(batch, event, sample) {
-  const key = `${batch.index}:${sample}`;
+  const key = `${batch.index}:${sample}:${R.unstored}`;
   const layers = layerCalls(batch, listGran());
   if (R.stackBatch !== key) {
     R.stackBatch = key;
@@ -316,6 +326,13 @@ function renderStage(batch, event, sample) {
     R.ioResult = result;
     clear(
       R.dom.stage,
+      R.unstored != null
+        ? h(
+            "div",
+            { class: "notice" },
+            `Sample #${R.unstored} can't be followed through the layers: only the first ${sampleCount()} samples' activations were stored. Showing sample #${sample}. Re-record with a larger --sample-rows to follow it.`,
+          )
+        : null,
       h("div", { class: "faint", style: { marginBottom: "6px", fontSize: "12px" } }, `input · sample #${sample} of batch ${batch.index}`),
       raw,
       h("div", { class: "flow" }, "↓"),

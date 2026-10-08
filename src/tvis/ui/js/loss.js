@@ -1,8 +1,8 @@
 // Loss page: the loss over the run, how one batch's loss is built, and predictions vs targets.
 
 import { api } from "./api.js";
-import { lossValue } from "./model.js";
-import { store } from "./store.js";
+import { followableSamples, lossValue } from "./model.js";
+import { openInReplay, store } from "./store.js";
 import { clear, cssVar, fmtNum, h, tooltip } from "./util.js";
 
 const NS = "http://www.w3.org/2000/svg";
@@ -143,6 +143,7 @@ function renderPerSample(slot, detail, batch, state) {
   const rows = (batch.samples || []).map((s, i) => ({ s, loss: detail.per_element[i]?.[0], p: detail.p_target?.[i]?.[0] }));
   rows.sort(sortBy === "loss" ? (a, b) => (b.loss ?? 0) - (a.loss ?? 0) : (a, b) => a.s.position - b.s.position);
   const max = Math.max(...rows.map((r) => r.loss ?? 0), 1e-9);
+  const { limit: followable, total } = followableSamples(batch);
   const name = (t) => (t == null ? "—" : t.name ?? classes?.[t.id] ?? t.id);
   clear(
     slot,
@@ -152,12 +153,19 @@ function renderPerSample(slot, detail, batch, state) {
       h("h3", { style: { margin: 0, flex: 1 } }, "How this batch's loss is built"),
       h("div", { class: "seg" }, [["loss", "worst first"], ["position", "#"]].map(([k, l]) => h("button", { class: sortBy === k ? "on" : "", onclick: () => ((sortBy = k), renderPerSample(slot, detail, batch, state)) }, l))),
     ),
-    h("div", { class: "hint", style: { marginTop: "6px" } }, "loss_i = −log p(target_i); the batch loss is their mean. Click a sample to follow it in Replay."),
+    h(
+      "div",
+      { class: "hint", style: { marginTop: "6px" } },
+      "loss_i = −log p(target_i); the batch loss is their mean. Click a sample to watch it go through the layers in Replay",
+      followable < total ? ` (the first ${followable} of ${total} were stored for that).` : ".",
+    ),
     h("div", { class: "lossrow head" }, h("span", {}, "#"), h("span", {}, "target → predicted"), h("span", {}, "p(target)"), h("span", {}, "loss"), h("span", {}, "")),
     rows.map(({ s, loss, p }) =>
       h(
         "div",
-        { class: "lossrow", onclick: () => store.set({ page: "replay", sample: s.position }) },
+        s.position < followable
+          ? { class: "lossrow", title: "follow this sample through the layers in Replay", onclick: () => openInReplay(batch.index, s.position) }
+          : { class: "lossrow", style: { cursor: "default" }, title: `only the first ${followable} samples' activations were stored (--sample-rows)` },
         h("span", { class: "faint" }, `#${s.position}`),
         h("span", {}, name(s.target), " → ", h("b", { style: { color: s.prediction?.correct ? "var(--good)" : "var(--bad)" } }, name(s.prediction))),
         h("span", { class: "mono" }, p != null ? fmtNum(p, 3) : "—"),

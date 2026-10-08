@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo.png" alt="tvis: see training unfold" width="760">
+</p>
+
 # tvis
 
 A step-through debugger for PyTorch training.

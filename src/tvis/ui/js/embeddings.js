@@ -4,7 +4,7 @@
 import { api } from "./api.js";
 import { categorical, legend, pct, scatter } from "./charts.js";
 import { firstOutput } from "./model.js";
-import { store } from "./store.js";
+import { openInReplay, store } from "./store.js";
 import { clear, fmtNum, h } from "./util.js";
 
 const E = { layer: null, table: null };
@@ -86,7 +86,7 @@ export function renderEmbeddings(container) {
             color: (p) => colors.color(p.label ?? "?"),
             hollow: (p) => p.correct === false,
             title: (p) => `batch ${p.batch} · sample #${p.position} · ${p.label ?? "?"}${p.loss != null ? ` · loss ${fmtNum(p.loss, 3)}` : ""}`,
-            onClick: (p) => store.set({ page: "replay", sample: p.position }),
+            onClick: (p) => openInReplay(p.batch, p.position),
           }),
           legend(colors.entries.slice(0, 12), [h("span", { class: "faint" }, `${res.points.length} samples · ${res.dim}-d → 2-d · explains ${pct(res.explained[0] + res.explained[1])} of variance`)]),
         );

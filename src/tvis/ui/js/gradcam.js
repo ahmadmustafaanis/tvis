@@ -1,7 +1,7 @@
 // Grad-CAM page: where in each image the model looked for its predicted (or the true) class.
 
 import { api } from "./api.js";
-import { store } from "./store.js";
+import { openInReplay, store } from "./store.js";
 import { clear, decodeBytes, decodeFloat32, fmtNum, h } from "./util.js";
 
 const G = { layer: null, which: "pred", opacity: 0.55 };
@@ -52,7 +52,7 @@ function camCard(batch, call, sample, state) {
   const p = sample.prediction || {};
   const card = h(
     "div",
-    { class: "cam", onclick: () => store.set({ page: "replay", sample: sample.position }), style: { cursor: "pointer" } },
+    { class: "cam", onclick: () => openInReplay(batch.index, sample.position), style: { cursor: "pointer" }, title: "open this sample in Replay" },
     canvas,
     h("div", { class: "lab" }, h("span", { class: "faint" }, `#${sample.position}`), h("span", {}, "true ", h("b", {}, sample.target?.name ?? sample.target?.id))),
     h("div", { class: "lab" }, h("span", { style: { color: p.correct ? "var(--good)" : "var(--bad)" } }, `${p.correct ? "✓" : "✗"} ${p.name ?? p.id ?? "?"}`), h("span", { class: "faint" }, p.p != null ? fmtNum(p.p, 2) : "")),

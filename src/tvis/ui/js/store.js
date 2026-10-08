@@ -13,6 +13,7 @@ const state = {
   stepBatches: [], // batch documents of the selected step
   selection: null, // {call: id} | {param: name}
   sample: null, // followed sample position, or null
+  replayFocus: null, // {batch, kind}: where Replay should jump when it opens (e.g. from the Loss page)
   tab: "overview",
   filter: "",
   kinds: new Set(["data", "module", "function", "loss", "backward", "optimizer"]),
@@ -56,4 +57,9 @@ export function saveHidden(projectDir, hidden) {
   } catch {
     /* storage unavailable: hiding still works for this session */
   }
+}
+
+/** Open Replay at a sample's moment in a batch (default: its loss), following that sample. */
+export function openInReplay(batch, sample, kind = "loss") {
+  store.set({ page: "replay", sample, batchIndex: batch, replayFocus: { batch, kind } });
 }
