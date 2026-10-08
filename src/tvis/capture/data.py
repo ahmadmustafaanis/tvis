@@ -321,7 +321,9 @@ class _LoaderIterator:
 
             def _next_index() -> Any:
                 index = next_index()
-                self._indices = list(index) if isinstance(index, (list, tuple)) else [index]
+                indices = list(index) if isinstance(index, (list, tuple)) else [index]
+                # iterable datasets have no indices: the sampler yields None placeholders
+                self._indices = None if all(i is None for i in indices) else indices
                 return index
 
             it._next_index = _next_index
