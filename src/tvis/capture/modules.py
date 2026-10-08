@@ -68,7 +68,7 @@ class ModuleHooks:
                 module_path=path,
                 file=file,
                 line=line,
-                call_site=s.find_call_site(sys._getframe(1)),
+                site_frame=sys._getframe(1),
             )
             if call is None:
                 return

@@ -66,7 +66,27 @@ class FunctionTracer:
             return
         s = self.session
         with s.guard("tracer call"):
-            rel, qualname = info
+            prepared = self._prepare(frame, code)
+            if prepared is None:
+                return
+            inputs, call_site = prepared
+            call = s.open_call(
+                K.FUNCTION,
+                code.co_name,
+                inputs=inputs,
+                qualname=info[1],
+                file=info[0],
+                line=code.co_firstlineno,
+                call_site=call_site,
+            )
+            if call is not None:
+                call.frame_id = id(frame)
+
+    def _prepare(self, frame: Any, code: Any) -> tuple[list, dict | None] | None:
+        """Inspect the new frame, bracketed as tvis overhead. None for a module's ``forward``, which
+        is merged into the module call rather than recorded twice."""
+        s = self.session
+        with s.internal():
             local_vars = frame.f_locals
             names = _argument_names(code)
             first = local_vars.get(names[0]) if names else None
@@ -79,7 +99,7 @@ class FunctionTracer:
                     and top.frame_id is None
                 ):
                     top.frame_id = id(frame)
-                    return
+                    return None
             inputs = [(n, local_vars[n]) for n in names if n in local_vars and n not in ("self", "cls")]
             caller = frame.f_back
             call_site = None
@@ -87,17 +107,7 @@ class FunctionTracer:
                 caller_rel = s.project.relpath(caller.f_code.co_filename)
                 if caller_rel is not None:
                     call_site = {"file": caller_rel, "line": caller.f_lineno}
-            call = s.open_call(
-                K.FUNCTION,
-                code.co_name,
-                inputs=inputs,
-                qualname=qualname,
-                file=rel,
-                line=code.co_firstlineno,
-                call_site=call_site,
-            )
-            if call is not None:
-                call.frame_id = id(frame)
+            return inputs, call_site
 
     def _on_return(self, frame: Any, value: Any) -> None:
         s = self.session

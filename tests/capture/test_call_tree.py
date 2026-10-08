@@ -185,3 +185,17 @@ def test_model_called_through_methods_keeps_its_layer_paths(capture):
     assert {"embed", "blocks.0", "blocks.1", "blocks.2", "head"} <= modules
     assert {p["name"] for p in result.steps[0]["params"]} == {n for n, _ in model.named_parameters()}
     assert [s["batches"] for s in result.steps] == [[0], [1]]
+
+
+def test_model_discovery_scans_the_heap_once_not_per_call(capture, monkeypatch):
+    import tvis.capture.session as session_module
+
+    scans = []
+    original = session_module._optimizers_owning
+    monkeypatch.setattr(session_module, "_optimizers_owning", lambda params: scans.append(1) or original(params))
+    model = models.SplitForwardNet()
+    opt = torch.optim.SGD(model.parameters(), lr=0.1)
+
+    capture(lambda: models.train_split(model, opt, models.make_batches(4)), steps=3)
+
+    assert len(scans) <= 2  # not once per top-level submodule call per batch

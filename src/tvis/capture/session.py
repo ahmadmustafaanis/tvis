@@ -244,14 +244,20 @@ class Session:
         inputs: list[tuple[str, Any]] | None = None,
         hook_grad: bool = True,
         call_site: dict[str, Any] | None = None,
+        site_frame: Any = None,
         **attrs: Any,
     ) -> Call | None:
-        """Push a call onto the stack and capture its inputs. Returns None when not recording."""
+        """Push a call onto the stack and capture its inputs. Returns None when not recording.
+
+        Pass ``site_frame`` (the caller's frame) rather than a precomputed ``call_site`` so the lookup
+        is bracketed as tvis overhead."""
         if not self.recording:
             return None
         batch = self.batch
         assert batch is not None
         with self.internal():
+            if site_frame is not None and call_site is None:
+                call_site = self.find_call_site(site_frame)
             parent = self.stack[-1] if self.stack else None
             call = Call(
                 id=next(self._call_ids),
@@ -370,8 +376,9 @@ class Session:
             or (not grad and id(module) in batch.forward_models)
         ):
             self._begin_batch()
-        self._discover_model(module)
-        self._register_model(module)
+        with self.internal():
+            self._discover_model(module)
+            self._register_model(module)
         batch = self.batch
         assert batch is not None
         batch.has_forward = True
@@ -529,7 +536,10 @@ class Session:
         submodules are seen as top-level calls. Needed when the script never calls the model itself
         (e.g. ``z = model.features(x); logits = model.read(z)``): then every submodule call looks
         top-level, and only the owner gives layers their real paths (``blocks.0.attn``)."""
-        for opt in _optimizers_owning(list(called.parameters())):  # optimizers built before install
+        params = list(called.parameters())
+        if any(id(p) in self._param_names for p in params):
+            return  # part of a model we already know; nothing new to discover (and gc scans are slow)
+        for opt in _optimizers_owning(params):  # optimizers built before install
             if not any(o is opt for o in self.optimizers):
                 self.optimizers.append(opt)
         if self._discovered_for == len(self.optimizers) or not self.optimizers:
@@ -588,7 +598,7 @@ class Session:
                     "backward",
                     inputs=[("loss", tensors)],
                     hook_grad=False,
-                    call_site=session.find_call_site(sys._getframe(1)),
+                    site_frame=sys._getframe(1),
                 )
             try:
                 return original(tensors, *args, **kwargs)
@@ -639,7 +649,7 @@ class Session:
             call = self.open_call(
                 K.OPTIMIZER,
                 type(opt).__name__,
-                call_site=self.find_call_site(sys._getframe(1)),
+                site_frame=sys._getframe(1),
                 extra={"hyper": _optimizer_hyper(opt)},
             )
             if call is not None:

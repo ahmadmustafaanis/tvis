@@ -56,7 +56,7 @@ class OpRecorder(TorchFunctionMode):
             and s.batch.phase in _RECORDED_PHASES
             and len(s.batch.ops) < s.MAX_OPS_PER_BATCH
         ):
-            with s.guard("op recorder"):
+            with s.guard("op recorder"), s.internal():
                 self._record(func, result, sys._getframe(1))
         return result
 
@@ -79,8 +79,7 @@ class OpRecorder(TorchFunctionMode):
             "dtype": dtype_name(outputs[0].dtype),
         }
         if name == "softmax" and _looks_like_attention(outputs[0]):
-            with s.internal():
-                record["value"] = capture_value(outputs[0], s.registry, hook_grad=False)
+            record["value"] = capture_value(outputs[0], s.registry, hook_grad=False)
             record["attention"] = True
         s.batch.ops.append(record)
 

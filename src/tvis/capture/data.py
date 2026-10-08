@@ -247,7 +247,7 @@ class DataInstrumentation:
                 K.LOSS,
                 name,
                 inputs=[("input", input), ("target", target)],
-                call_site=session.find_call_site(sys._getframe(1)),
+                site_frame=sys._getframe(1),
             )
             out = original(input, target, *args, **kwargs)
             if call is not None:
@@ -307,7 +307,7 @@ class _LoaderIterator:
             K.DATA,
             "DataLoader",
             hook_grad=False,
-            call_site=s.find_call_site(sys._getframe(1)),
+            site_frame=sys._getframe(1),
         )
         self._indices = None
         try:
