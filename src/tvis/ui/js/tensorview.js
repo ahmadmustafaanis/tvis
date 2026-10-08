@@ -158,27 +158,30 @@ export function tensorCard(opts) {
 
   function renderBody() {
     const toggles = h("div", { class: "toolbar" });
-    const seg = h("div", { class: "seg" });
-    for (const [label, value] of [["Value", false], ["Gradient", true]]) {
-      const disabled = value && meta.grad_stats == null;
-      seg.append(
+    // Value/Gradient only makes sense when dL/d(this tensor) was recorded. Weights-page tensors are
+    // already a weight, a gradient or an update, and inputs like the data batch get no gradient.
+    if (meta.grad_stats != null) {
+      toggles.append(
         h(
-          "button",
-          {
-            class: grad === value ? "on" : "",
-            disabled,
-            title: disabled ? "no gradient flowed to this tensor" : "",
-            onclick: (e) => {
-              e.stopPropagation();
-              grad = value;
-              render();
-            },
-          },
-          label,
+          "div",
+          { class: "seg" },
+          [["Value", false], ["Gradient", true]].map(([label, value]) =>
+            h(
+              "button",
+              {
+                class: grad === value ? "on" : "",
+                onclick: (e) => {
+                  e.stopPropagation();
+                  grad = value;
+                  render();
+                },
+              },
+              label,
+            ),
+          ),
         ),
       );
     }
-    toggles.append(seg);
     const stored = grad ? meta.grad_stored : meta.stored;
     if (stored === "rows") toggles.append(h("span", { class: "faint" }, `first ${grad ? meta.grad_stored_rows : meta.stored_rows} rows stored`));
     const view = h("div", {});

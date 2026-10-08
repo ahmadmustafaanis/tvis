@@ -340,7 +340,7 @@ td.good { color: var(--good); }
 .tensor-head:hover { background: var(--bg-hover); }
 .tensor-head .nm { font-weight: 550; }
 .tensor-head .sh { font-family: var(--mono); font-size: 11px; color: var(--text-muted); }
-.tensor-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 2px 8px; padding: 0 10px 8px; font-size: 11px; font-variant-numeric: tabular-nums; }
+.tensor-stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 2px 8px; padding: 0 10px 8px; font-size: 11px; font-variant-numeric: tabular-nums; }
 .tensor-stats span b { color: var(--text-faint); font-weight: 500; margin-right: 3px; }
 .hist { width: 100%; height: 34px; display: block; }
 .tensor-body { border-top: 1px solid var(--border); padding: 10px; }
@@ -544,3 +544,15 @@ svg.chart .step-band { fill: var(--bg-elev-2); }
 .cam .lab { display: flex; justify-content: space-between; font-size: 12px; margin-top: 6px; }
 .scatter-tip { font-size: 12px; color: var(--text-muted); min-height: 18px; margin-top: 6px; }
 .weights > .page-wrap { margin: 0; width: 100%; max-width: none; }
+
+@media (max-width: 980px) {
+  .weights { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto; height: auto; }
+  .weights > * { overflow: visible; }
+  .plist { border-right: 0; border-bottom: 1px solid var(--border); max-height: 34vh; overflow: auto !important; }
+  .replay-body { grid-template-columns: minmax(0, 1fr); }
+  .events { max-height: 30vh; border-right: 0; border-bottom: 1px solid var(--border); }
+  .detail { border-left: 0; border-top: 1px solid var(--border); }
+  .replay { height: auto; }
+  .lrow { grid-template-columns: 22px minmax(0, 1fr) 56px 70px; }
+  .lrow .shp { display: none; }
+}
