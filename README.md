@@ -29,7 +29,9 @@ tvis run --steps 3 train.py --lr 3e-4           # debug run: same script, same a
 tvis open mycluster:~/proj/tvis_runs            # on your laptop: opens the viewer
 ```
 
-![Replay view: a ViT's layers stacked in 3D, with one block's activation strength drawn over the input image](assets/replay.png)
+![3D view: a ViT's layers stacked as slabs, with one block's activation strength drawn over the input image](assets/replay.png)
+
+![Replay view: stepping through a ViT layer by layer, with the selected layer's output drawn over the input image](assets/replay-layer.png)
 
 > Early development (v1). PyTorch, single device, eager mode. See [SCOPE.md](SCOPE.md).
 
