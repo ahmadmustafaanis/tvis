@@ -882,15 +882,17 @@ function panTo(x) {
   const dx = nx - controls.target.x;
   controls.target.x += dx;
   camera.position.x += dx;
+  S.three.glideUntil = 0; // an unfinished 'overview' glide would pull the view back
   setFollow(false);
 }
 
-/** Put the camera at the standard angle looking at x from `distance`. */
+/** Camera distance while following, backed off on narrow views so the same span stays visible. */
 function followDistance() {
   const aspect = S.three?.camera.aspect || 1.6;
   return FOLLOW_DISTANCE * Math.max(1, 1.7 / aspect);
 }
 
+/** Put the camera at the current viewing angle looking at x from `distance`. */
 function placeCamera(x, distance, immediate = false) {
   const { camera, controls, target } = S.three;
   target.set(x, 0, 0);
