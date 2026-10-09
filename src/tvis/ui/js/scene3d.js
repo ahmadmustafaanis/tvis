@@ -10,15 +10,15 @@ import { layerView } from "./layerview.js";
 import { followableSamples, imageInput, index, lossValue, patchGrid, sampleShape, tensorRefs } from "./model.js";
 import { buildEvents, layerCalls } from "./replay.js";
 import { store } from "./store.js";
-import { clear, decodeBytes, decodeFloat32, fmtNum, h, phaseColor } from "./util.js";
+import { buildTransport, phaseJump } from "./transport.js";
+import { clear, decodeBytes, decodeFloat32, fmtNum, h, icon } from "./util.js";
 
 const GRANULARITIES = [
   ["layer", "Layer"],
   ["phase", "Phase"],
   ["batch", "Batch"],
 ];
-const SPEEDS = [0.5, 1, 2, 4];
-const BG = 0x07090d;
+const BG = 0x08080a; // --viewport-3d
 const WARM = [
   [0, 0, 0],
   [120, 20, 10],
@@ -73,13 +73,26 @@ export function renderScene3d(container) {
     S.graphKey = null;
     S.selected = null;
   }
+  const focus = state.replayFocus;
+  if (focus) {
+    state.replayFocus = null; // consumed (set directly: bookkeeping, no re-render needed)
+    const exact = S.events.findIndex((e) => e.batch === focus.batch && e.kind === focus.kind && (focus.call == null || e.call?.id === focus.call));
+    const fallback = S.events.findIndex((e) => e.batch === focus.batch);
+    pause();
+    S.i = Math.max(0, exact >= 0 ? exact : fallback);
+  }
   if (!S.dom || !container.contains(S.dom.root)) buildDom(container);
+  S.dom.transport.setEvents(S.events);
+  S.dom.transport.setPosition(S.i);
   if (!S.three) initThree();
   else S.dom.viewport.append(S.three.renderer.domElement);
   S.stops = computeStops();
   startLoop();
   update();
 }
+
+/** The event the 3D view is showing (so Replay can open at the same moment). */
+export const scene3dPosition = () => S.events[S.i] || null;
 
 export function stopScene3d() {
   pause();
@@ -91,7 +104,9 @@ export function scene3dKey(event) {
   if (event.key === " ") {
     event.preventDefault();
     toggle();
-  } else if (event.key === "ArrowRight") go(nextStop(1));
+  } else if (event.key === "ArrowRight" && event.shiftKey) go(phaseJump(S.events, S.i, 1));
+  else if (event.key === "ArrowLeft" && event.shiftKey) go(phaseJump(S.events, S.i, -1));
+  else if (event.key === "ArrowRight") go(nextStop(1));
   else if (event.key === "ArrowLeft") go(nextStop(-1));
   else if (event.key === "]") shiftSample(1);
   else if (event.key === "[") shiftSample(-1);
@@ -615,16 +630,25 @@ function currentBatch() {
 // DOM
 // ---------------------------------------------------------------------------------------------
 function buildDom(container) {
-  const now = h("div", { class: "now" });
-  const playBtn = h("button", { class: "tbtn play", title: "Play / pause (space)", onclick: toggle }, "▶");
-  const gran = h(
-    "div",
-    { class: "seg" },
-    GRANULARITIES.map(([k, l]) => h("button", { class: k === S.gran ? "on" : "", dataset: { gran: k }, onclick: () => ((S.gran = k), (S.stops = computeStops()), syncControls()) }, l)),
-  );
-  const speed = h("select", { class: "select", title: "Speed", onchange: (e) => (S.speed = Number(e.target.value)) }, SPEEDS.map((s) => h("option", { value: s, selected: s === S.speed }, `${s}×`)));
-  const followBtn = h("button", { class: `chip ${S.follow ? "on" : ""}`, title: "Camera follows the active layer", onclick: () => setFollow(!S.follow) }, "follow");
-  const sampleNav = h("span", { class: "sample-nav" });
+  const followBtn = h("button", { class: `chip ${S.follow ? "on" : ""}`, title: "Camera follows the active layer", onclick: () => setFollow(!S.follow) }, "Follow");
+  const transport = buildTransport({
+    granularities: GRANULARITIES,
+    gran: S.gran,
+    speed: S.speed,
+    onGran: (key) => ((S.gran = key), (S.stops = computeStops()), syncControls()),
+    onSpeed: (x) => (S.speed = x),
+    onRestart: () => (pause(), go(0)),
+    onPrev: () => go(nextStop(-1)),
+    onToggle: toggle,
+    onNext: () => go(nextStop(1)),
+    onSeek: (i) => (pause(), go(i)),
+    onSample: shiftSample,
+    extras: [
+      followBtn,
+      h("button", { class: "icon-btn", title: "Fit the whole model on screen", onclick: overview }, icon("fit")),
+      h("button", { class: "icon-btn", title: "Expand or collapse every repeated block", onclick: toggleExpandAll }, icon("layers")),
+    ],
+  });
   const viewport = h("div", { class: "s3-viewport" });
   const hud = h("div", { class: "s3-hud" });
   const track = h("input", {
@@ -638,40 +662,14 @@ function buildDom(container) {
     oninput: (e) => panTo(Number(e.target.value)),
   });
   const panel = h("div", { class: "s3-panel hidden" });
-  const root = h(
-    "div",
-    { class: "s3" },
-    h(
-      "div",
-      { class: "transport" },
-      h(
-        "div",
-        { class: "transport-row" },
-        h("button", { class: "tbtn", title: "Restart", onclick: () => go(0) }, "⏮"),
-        h("button", { class: "tbtn", title: "Previous (←)", onclick: () => go(nextStop(-1)) }, "◀"),
-        playBtn,
-        h("button", { class: "tbtn", title: "Next (→)", onclick: () => go(nextStop(1)) }, "▶|"),
-        now,
-        h("div", { style: { flex: 1 } }),
-        sampleNav,
-        h("label", { class: "faint" }, "step by"),
-        gran,
-        speed,
-        followBtn,
-        h("button", { class: "chip", title: "Fit the whole model on screen", onclick: overview }, "overview"),
-        h("button", { class: "chip", title: "Expand or collapse every repeated block", onclick: toggleExpandAll }, "blocks ⇄"),
-      ),
-    ),
-    h("div", { class: "s3-body" }, viewport, panel),
-    hud,
-  );
+  const root = h("div", { class: "s3" }, transport.root, h("div", { class: "s3-body" }, viewport, panel), hud);
   viewport.append(hud, h("div", { class: "s3-track-wrap" }, h("span", {}, "scroll"), track));
   clear(container, root);
-  S.dom = { root, now, playBtn, gran, sampleNav, viewport, hud, panel, followBtn, track };
+  S.dom = { root, transport, viewport, hud, panel, followBtn, track };
 }
 
 function syncControls() {
-  for (const b of S.dom.gran.querySelectorAll("button")) b.classList.toggle("on", b.dataset.gran === S.gran);
+  S.dom.transport.setGran(S.gran);
 }
 
 function toggleExpandAll() {
@@ -707,21 +705,9 @@ function update() {
     }
     S.dom.track.max = String(Math.max(1, S.graph.length));
   }
-  S.dom.playBtn.textContent = S.playing ? "❚❚" : "▶";
-  clear(
-    S.dom.now,
-    h("span", { class: "ph", style: { background: phaseColor(event.phase) } }, event.phase),
-    h("b", {}, event.label),
-    h("span", { class: "faint" }, `  ·  batch ${event.batch} · step ${event.step}`),
-  );
-  clear(
-    S.dom.sampleNav,
-    h("span", { class: "faint" }, "sample"),
-    h("button", { onclick: () => shiftSample(-1) }, "‹"),
-    h("b", {}, `#${sample}`),
-    h("button", { onclick: () => shiftSample(1) }, "›"),
-    limit < total ? h("span", { class: "faint" }, `of ${limit} stored`) : null,
-  );
+  S.dom.transport.setPlaying(S.playing);
+  S.dom.transport.setPosition(S.i);
+  S.dom.transport.setSample({ sample, limit, total });
   applyEvent(event, batch, sample);
   renderPanel(batch, sample);
 }
@@ -955,10 +941,10 @@ function renderPanel(batch, sample) {
     panel,
     h(
       "div",
-      { style: { display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" } },
-      h("h2", { style: { flex: 1, margin: 0, fontSize: "15px" } }, grad ? `∇ ${call.name}` : call.name),
+      { class: "panel-title" },
+      h("h2", {}, grad ? `∇ ${call.name}` : call.name),
       node?.unit ? h("button", { class: "chip small", onclick: () => (S.expanded.add(unitKey(call)), (S.graphKey = null), update()) }, "expand block") : null,
-      h("button", { class: "chip small", onclick: () => ((S.selected = null), (panel.dataset.key = ""), update()) }, "✕"),
+      h("button", { class: "icon-btn", title: "Close", onclick: () => ((S.selected = null), (panel.dataset.key = ""), update()) }, icon("close")),
     ),
     h("div", { class: "faint", style: { marginBottom: "8px" } }, `${call.kind === "function" ? "function" : call.cls} · forward ${call.ms != null ? `${call.ms.toFixed(2)} ms` : "—"}`),
     layerView({ run: store.get().runId, batch, call, sample, grad, state: store.get() }),

@@ -25,7 +25,6 @@ export function renderGradcam(container) {
     h(
       "div",
       { class: "page-wrap" },
-      h("div", { class: "page-head" }, h("h1", {}, "Grad-CAM"), h("span", { class: "lede" }, "Which regions of each image drove the class score, at a chosen conv layer. Red = strong evidence.")),
       h(
         "div",
         { class: "controls" },
@@ -34,8 +33,8 @@ export function renderGradcam(container) {
         h("div", { class: "seg" }, [["pred", "for predicted class"], ["target", "for true class"]].map(([k, l]) => h("button", { class: G.which === k ? "on" : "", onclick: () => ((G.which = k), renderGradcam(container)) }, l))),
         h("label", {}, "overlay", h("input", { type: "range", min: 0, max: 100, value: G.opacity * 100, onchange: (e) => ((G.opacity = Number(e.target.value) / 100), renderGradcam(container)) })),
       ),
-      h("div", { class: "hint" }, "Computed during capture with an extra gradient pass of the class score (training numerics untouched). Deeper layers are coarser but more semantic."),
       grid,
+      h("div", { class: "hint", style: { marginTop: "20px" } }, "Red = strong evidence for the class. Computed during capture with an extra gradient pass of the class score (training numerics untouched); deeper layers are coarser but more semantic. Click an image to follow it in Replay."),
     ),
   );
   for (const s of batch.samples || []) grid.append(camCard(batch, call, s, state));
@@ -49,7 +48,7 @@ function camCard(batch, call, sample, state) {
     { class: "cam", onclick: () => openInReplay(batch.index, sample.position), style: { cursor: "pointer" }, title: "open this sample in Replay" },
     canvas,
     h("div", { class: "lab" }, h("span", { class: "faint" }, `#${sample.position}`), h("span", {}, "true ", h("b", {}, sample.target?.name ?? sample.target?.id))),
-    h("div", { class: "lab" }, h("span", { style: { color: p.correct ? "var(--good)" : "var(--bad)" } }, `${p.correct ? "✓" : "✗"} ${p.name ?? p.id ?? "?"}`), h("span", { class: "faint" }, p.p != null ? fmtNum(p.p, 2) : "")),
+    h("div", { class: "lab" }, h("span", { style: { color: p.correct ? "var(--good)" : "var(--bad)" } }, `${p.correct ? "right" : "wrong"}: ${p.name ?? p.id ?? "?"}`), h("span", { class: "faint" }, p.p != null ? fmtNum(p.p, 2) : "")),
   );
   const camRef = call.extra.gradcam[G.which];
   const ref = sample.input; // the model's input, so the CAM aligns with it

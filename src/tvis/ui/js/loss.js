@@ -28,16 +28,21 @@ export function renderLoss(container) {
     h(
       "div",
       { class: "page-wrap" },
-      h("div", { class: "page-head" }, h("h1", {}, "Loss"), h("span", { class: "lede" }, "What the model predicted, how wrong it was, and how that changed over the captured steps.")),
       h(
         "div",
         { class: "grid-2" },
-        h("div", { class: "card" }, h("h3", {}, "Loss per batch"), h("div", { class: "hint" }, "Each step sees a different batch, so this mixes learning progress with how hard each batch is."), lossChart(batches, state.steps, batch.index)),
-        h("div", { class: "card" }, h("h3", {}, `Batch ${batch.index}: per-sample loss`), lossHistogram(batch)),
+        h(
+          "div",
+          { class: "card" },
+          h("h3", {}, "Loss per batch"),
+          lossChart(batches, state.steps, batch.index),
+          h("div", { class: "hint" }, "Click a point to inspect that batch. Each step sees different data, so this mixes learning progress with how hard each batch is."),
+        ),
+        h("div", { class: "card" }, h("h3", {}, `Batch ${batch.index}: distribution of per-sample loss`), lossHistogram(batch)),
       ),
-      h("div", { style: { height: "14px" } }),
+      h("div", { class: "gap-y" }),
       lossCall ? h("div", { class: "formula" }, formula(lossCall, batch)) : h("div", { class: "notice" }, "No loss function call was recorded in this batch (only torch.nn.functional losses are recognised)."),
-      h("div", { style: { height: "14px" } }),
+      h("div", { class: "gap-y" }),
       h("div", { class: "grid-2" }, detailSlot, predSlot),
     ),
   );
@@ -81,7 +86,8 @@ function lossChart(batches, steps, selected) {
   const lo = Math.min(...values.map((p) => p.v));
   const hi = Math.max(...values.map((p) => p.v));
   const span = hi - lo || Math.abs(hi) || 1;
-  const x = (i) => pad.l + (values.length === 1 ? (W - pad.l - pad.r) / 2 : (i / (values.length - 1)) * (W - pad.l - pad.r));
+  const inset = 18; // keep the first/last points clear of the axis labels
+  const x = (i) => pad.l + inset + (values.length === 1 ? (W - pad.l - pad.r - 2 * inset) / 2 : (i / (values.length - 1)) * (W - pad.l - pad.r - 2 * inset));
   const y = (v) => pad.t + (1 - (v - (lo - span * 0.1)) / (span * 1.2)) * (H - pad.t - pad.b);
   const root = svg("svg", { class: "chart", viewBox: `0 0 ${W} ${H}` });
   // step bands
@@ -218,7 +224,7 @@ function renderTokens(slot, detail, batch, state) {
   clear(
     slot,
     h("h3", {}, "Loss per token"),
-    h("div", { class: "hint" }, "Each target token coloured by its loss (red = the model was surprised). Struck-through tokens are padding and don't count. Hover for p(target) and the predicted token."),
+    h("div", { class: "hint" }, "Each target token shaded by its loss: the redder, the more the model was surprised. Struck-through tokens are padding and don't count. Hover a token for p(target) and the prediction."),
     detail.per_element.map((row, i) =>
       h(
         "div",

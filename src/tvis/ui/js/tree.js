@@ -2,7 +2,7 @@
 
 import { firstOutput, hasProblem, index, matchesFilter, tensorMeta, visibleChildren } from "./model.js";
 import { hiddenKey, saveHidden, store } from "./store.js";
-import { badge, clear, fmtMs, fmtShape, h, phaseColor, tooltip } from "./util.js";
+import { badge, clear, fmtMs, fmtShape, h, icon, phaseColor, tooltip } from "./util.js";
 
 const KIND_FILTERS = [
   ["data", "Data"],
@@ -140,7 +140,7 @@ function callRow(batch, idx, call, depth, hasKids, expanded) {
             store.set({ hidden });
           },
         },
-        "⊘",
+        icon("hide"),
       ),
     ),
   );

@@ -98,18 +98,22 @@ tvis open gpu
 
 ## The viewer
 
+Pages run left to right in the order a training step happens, and keys `1`–`5` jump between
+them (`?` lists every shortcut). Colour always means a training phase or a value, never decoration:
+data · forward · loss · backward · update.
+
 | Page | What it shows |
 |---|---|
-| **▶ Replay** (default) | Plays the recorded steps back like training happening. The batch loads and your sample goes through the transforms; each layer lights up with its activation for that sample; the loss appears; gradients flow back up, each layer coloured by ‖dL/d(output)‖; the optimizer updates; the next batch starts. Play/pause, step (←/→), jump by phase, pick the step size (layer · every call · phase · batch) and the sample (`[` / `]`). |
-| **Every layer: On image · Neurons · Stats** | In Replay and in Explore's inspector. *On image*: the layer's activation (or gradient) for the followed sample painted over the input picture: mean \|x\| per location for conv maps, per-patch token strength for ViTs, and for attention layers where `[CLS]` (or any patch you click) looks. Click a location for every neuron's raw value there. *Neurons*: every conv channel / ViT hidden dimension as its own map (most active first) or, for vectors such as logits, labelled bars; click one for its exact numbers. |
+| **Replay** (default) | Plays the recorded steps back like training happening. The batch loads and your sample goes through the transforms; each layer lights up with its activation for that sample; the loss appears; gradients flow back up, each layer coloured by ‖dL/d(output)‖; the optimizer updates; the next batch starts. Play/pause, step (←/→), jump by phase, pick the step size (layer · every call · phase · batch) and the sample (`[` / `]`). The bar under the controls maps the whole recording (one block per batch, its phases inside): click or drag to jump; *Data → Forward → Loss → Backward → Update* shows where you are and jumps to any phase. Switch between the **Layer stack** and **3D** views at the same moment. |
+| **Every layer: On image · Neurons · Stats** | In Replay and in Trace's inspector. *On image*: the layer's activation (or gradient) for the followed sample painted over the input picture: mean \|x\| per location for conv maps, per-patch token strength for ViTs, and for attention layers where `[CLS]` (or any patch you click) looks. Click a location for every neuron's raw value there. *Neurons*: every conv channel / ViT hidden dimension as its own map (most active first) or, for vectors such as logits, labelled bars; click one for its exact numbers. |
 | **Loss** | Loss per batch across the run. The exact loss call and how it reduces. Each sample's p(target) → −log p → loss, worst first. A confusion matrix over all captured samples (classification), or each target token coloured by its loss with padding struck out (language models). |
 | **Weights** | One layer at a time: conv kernels as a filter × channel grid, matrices as heatmaps, with stats and histograms. Switch weight / gradient / update Δw and slide across steps. "All layers" shows lazily loaded thumbnails of every parameter. |
 | **Insights → Attention** | Token-to-token attention maps from softmax weights computed in your code, per layer and head with real tokens on the axes, plus attention rollout across layers. |
 | **Insights → Grad-CAM** | True Grad-CAM (class-score gradients) over each input image, per conv layer, for the predicted or the true class. |
 | **Insights → Embeddings** | PCA of every captured sample's representation at a chosen layer, coloured by class (slide through depth to see classes separate), and PCA of embedding tables labelled by token. |
-| **Explore** | The full debugger: call tree, inspector, samples, timeline, annotated source, layers table, step view. |
+| **Trace** | The full debugger: call tree, inspector, samples, timeline, annotated source, layers table, step view. |
 
-Insight pages appear only when they apply: Grad-CAM needs conv layers, Attention needs attention
+Insights views appear only when they apply: Grad-CAM needs conv layers, Attention needs attention
 softmaxes, and so on.
 
 ## Accuracy

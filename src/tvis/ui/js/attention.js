@@ -42,7 +42,6 @@ export function renderAttention(container) {
     h(
       "div",
       { class: "page-wrap" },
-      h("div", { class: "page-head" }, h("h1", {}, "Attention"), h("span", { class: "lede" }, "Row = the token doing the looking (query), column = the token it looks at (key). Brighter = more attention.")),
       h(
         "div",
         { class: "controls" },
@@ -70,7 +69,13 @@ export function renderAttention(container) {
       patchLayout(batch, sample, layer.shape[layer.shape.length - 1])
         ? h("div", { class: "attn-layout" }, h("div", { class: "sticky", id: "attn-image" }), h("div", { class: "card" }, plot, readout))
         : h("div", {}, h("div", { class: "card" }, plot, readout), h("div", { id: "attn-image" })),
-      A.view === "rollout" ? h("div", { class: "hint", style: { marginTop: "8px" } }, "Rollout multiplies (½·A + ½·I) across layers (heads averaged) to estimate how much each output position draws on each input token overall.") : null,
+      h(
+        "div",
+        { class: "hint", style: { marginTop: "12px" } },
+        A.view === "rollout"
+          ? "Rollout multiplies (½·A + ½·I) across layers (heads averaged) to estimate how much each output position draws on each input token overall."
+          : "Row = the token doing the looking (query), column = the token it looks at (key). Brighter = more attention.",
+      ),
     ),
   );
   draw(plot, readout, batch, layers, sample, state).catch((err) => clear(plot, h("div", { class: "err" }, err.message)));

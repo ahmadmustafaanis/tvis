@@ -31,7 +31,7 @@ export function renderWeights(container) {
   const list = h(
     "div",
     { class: "plist" },
-    h("div", { class: "grp", style: { padding: "6px 14px", color: "var(--text-faint)", fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.5px" } }, `${step.params.length} parameters`),
+    h("div", { class: "grp" }, `${step.params.length} parameters · ‖Δw‖/‖w‖ · shape`),
     step.params.map((p) =>
       h(
         "div",
@@ -54,15 +54,13 @@ export function renderWeights(container) {
       h("b", {}, `${W.step}`),
       h("span", { class: "faint" }, `/ ${steps.length - 1}`),
     ),
+    h("span", { class: "faint" }, W.view === "weight" ? `values before optimizer step ${W.step}` : W.view === "grad" ? `gradient used by step ${W.step}` : `change applied by step ${W.step}`),
     h("div", { style: { flex: 1 } }),
-    h("button", { class: `chip ${W.all ? "on" : ""}`, onclick: () => ((W.all = !W.all), renderWeights(container)) }, W.all ? "← one layer" : "All layers"),
+    h("div", { class: "seg" }, [[false, "One parameter"], [true, "All"]].map(([all, label]) => h("button", { class: W.all === all ? "on" : "", onclick: () => ((W.all = all), renderWeights(container)) }, label))),
   );
   const main = h("div", { class: "page-wrap", style: { maxWidth: "none" } });
   clear(container, h("div", { class: "weights" }, list, main));
-  main.append(
-    h("div", { class: "page-head" }, h("h1", {}, "Weights"), h("span", { class: "lede" }, W.view === "weight" ? `values before optimizer step ${W.step}` : W.view === "grad" ? `gradient used by step ${W.step}` : `change applied by step ${W.step}`)),
-    controls,
-  );
+  main.append(controls);
   if (W.all) return main.append(allLayers(step, batchOf, state));
   const p = step.params.find((x) => x.name === W.param);
   if (!p) return;
@@ -72,7 +70,7 @@ export function renderWeights(container) {
   main.append(
     h(
       "div",
-      { class: "kpis", style: { marginBottom: "14px" } },
+      { class: "kpis", style: { marginBottom: "24px" } },
       [
         ["‖w‖", fmtNum(p.weight_norm)],
         ["‖grad‖", fmtNum(p.grad_norm)],

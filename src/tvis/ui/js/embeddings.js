@@ -48,13 +48,12 @@ export function renderEmbeddings(container) {
     h(
       "div",
       { class: "page-wrap stack-gap" },
-      h("div", { class: "page-head" }, h("h1", {}, "Embeddings"), h("span", { class: "lede" }, "2-D PCA projections. Points that sit together are represented alike by the model.")),
       layers.length
         ? h(
             "div",
             { class: "card" },
             h("h3", {}, "Sample representations by layer"),
-            h("div", { class: "hint" }, `Every captured sample, coloured by its true label (hollow = misclassified). Slide through the layers to see whether classes separate with depth.`),
+            h("div", { class: "hint" }, "Every captured sample, coloured by its true label (hollow = misclassified), projected with PCA. Slide through the layers to see whether classes separate with depth. Click a point to follow it in Replay."),
             h(
               "div",
               { class: "controls" },

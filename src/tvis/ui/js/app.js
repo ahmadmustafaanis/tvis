@@ -8,32 +8,50 @@ import { renderInspector } from "./inspector.js";
 import { renderLayers } from "./layers.js";
 import { renderLoss } from "./loss.js";
 import { renderOverview } from "./overview.js";
-import { renderReplay, replayKey, stopReplay } from "./replay.js";
-import { renderScene3d, scene3dKey, stopScene3d } from "./scene3d.js";
+import { renderReplay, replayKey, replayPosition, stopReplay } from "./replay.js";
+import { renderScene3d, scene3dKey, scene3dPosition, stopScene3d } from "./scene3d.js";
 import { renderSamples } from "./samples.js";
 import { renderSource } from "./source.js";
 import { renderStep } from "./step.js";
 import { loadHidden, saveHidden, store } from "./store.js";
 import { renderTimeline } from "./timeline.js";
 import { renderKindFilters, renderTree } from "./tree.js";
-import { clear, debounce, fmtMs, h, phaseColor } from "./util.js";
+import { clear, debounce, fmtMs, h, icon, phaseColor } from "./util.js";
 import { renderWeights } from "./weights.js";
 
+// Pages follow the order of a training step: watch it (Replay), what the model sees on the way
+// forward (Insights), how wrong it was (Loss), what the update did (Weights) — then the raw call
+// trace underneath everything.
 const PAGES = {
-  replay: { label: "▶ Replay", render: renderReplay },
-  scene3d: { label: "3D", render: renderScene3d },
-  loss: { label: "Loss", render: renderLoss },
-  weights: { label: "Weights", render: renderWeights },
-  attention: { label: "Attention", render: renderAttention, insight: true, available: (s) => s.allBatches?.some((b) => attentionLayers(b).length) },
-  gradcam: { label: "Grad-CAM", render: renderGradcam, insight: true, available: (s) => s.allBatches?.some((b) => camLayers(b).length) },
+  replay: { label: "Replay", what: "Watch training happen: data → forward → loss → backward → update" },
+  insights: { label: "Insights", what: "What the model attends to and how it represents samples", available: (s) => availableInsights(s).length > 0 },
+  loss: { label: "Loss", what: "What the model predicted and how wrong it was, per sample", render: renderLoss },
+  weights: { label: "Weights", what: "Each parameter, its gradient and the update the optimizer applied", render: renderWeights },
+  explore: { label: "Trace", what: "Every recorded call with its timing, inputs, outputs and source line" },
+};
+const REPLAY_VIEWS = {
+  "2d": { label: "Layer stack", render: renderReplay },
+  "3d": { label: "3D", render: renderScene3d },
+};
+const INSIGHTS = {
+  attention: { label: "Attention", what: "Where each token looks: rows are queries, columns are keys", render: renderAttention, available: (s) => s.allBatches?.some((b) => attentionLayers(b).length) },
+  gradcam: { label: "Grad-CAM", what: "Which regions of each image drove the class score", render: renderGradcam, available: (s) => s.allBatches?.some((b) => camLayers(b).length) },
   embeddings: {
     label: "Embeddings",
+    what: "2-D projections: points that sit together are represented alike",
     render: renderEmbeddings,
-    insight: true,
     available: (s) => s.allBatches?.[0] && (representationLayers(s.allBatches[0]).length || embeddingTables(s).length),
   },
-  explore: { label: "Explore" },
 };
+// old page names (bookmarks, links) → where they live now
+const LEGACY_PAGES = { scene3d: { page: "replay", replayView: "3d" }, attention: { page: "insights", insight: "attention" }, gradcam: { page: "insights", insight: "gradcam" }, embeddings: { page: "insights", insight: "embeddings" } };
+
+const availableInsights = (s) => Object.keys(INSIGHTS).filter((k) => INSIGHTS[k].available(s));
+const currentInsight = (s) => {
+  const available = availableInsights(s);
+  return available.includes(s.insight) ? s.insight : available[0];
+};
+const visiblePages = (s) => Object.keys(PAGES).filter((k) => !PAGES[k].available || PAGES[k].available(s));
 
 const $ = (id) => document.getElementById(id);
 const PHASES = ["data", "forward", "loss", "backward", "post_backward", "optimizer"];
@@ -81,6 +99,8 @@ async function selectRun(runId, initial = {}) {
     steps,
     hidden,
     page: PAGES[initial.page] ? initial.page : store.get().page || "replay",
+    replayView: REPLAY_VIEWS[initial.view] ? initial.view : store.get().replayView,
+    insight: INSIGHTS[initial.insight] ? initial.insight : store.get().insight,
     mode,
     batchIndex: clampIndex(initial.b, meta.batches_captured),
     stepIndex: clampIndex(initial.s, steps.length),
@@ -125,11 +145,25 @@ function renderRunSelect() {
   const s = store.get();
   clear(
     $("run-select"),
-    s.runs.map((r) => h("option", { value: r.run_id, selected: r.run_id === s.runId }, `${r.script?.split("/").pop() || r.run_id} · ${r.run_id.slice(0, 15)} · ${r.status}`)),
+    s.runs.map((r) => h("option", { value: r.run_id, selected: r.run_id === s.runId }, runLabel(r))),
   );
+  renderNotices();
+}
+
+function runLabel(run) {
+  const id = run.run_id;
+  const when = /^\d{8}-\d{6}/.test(id) ? `${id.slice(4, 6)}/${id.slice(6, 8)} ${id.slice(9, 11)}:${id.slice(11, 13)}` : id;
+  return `${run.script?.split("/").pop() || id}  ·  ${when}${run.status === "complete" ? "" : `  ·  ${run.status}`}`;
+}
+
+function renderNotices() {
+  const s = store.get();
   const notices = s.meta?.notices?.length || 0;
-  $("notices-btn").classList.toggle("hidden", !notices && s.meta?.status !== "error");
-  $("notices-btn").title = `${notices} notice(s)`;
+  const failed = s.meta?.status === "error";
+  const button = $("notices-btn");
+  button.classList.toggle("hidden", !notices && !failed);
+  button.title = failed ? "The script failed: see the run overview" : `${notices} capture notice${notices === 1 ? "" : "s"}: see the run overview`;
+  clear(button, icon("alert"), failed ? "failed" : String(notices));
 }
 
 function renderHeader() {
@@ -147,28 +181,62 @@ function renderHeader() {
   clear(
     $("follow-slot"),
     s.sample != null
-      ? h("span", { class: "follow" }, `following sample #${s.sample}${sample?.index != null ? ` (idx ${sample.index})` : ""}`, h("button", { title: "Stop following (Esc)", onclick: () => store.set({ sample: null }) }, "✕"))
+      ? h("span", { class: "follow" }, `following sample #${s.sample}${sample?.index != null ? ` (dataset index ${sample.index})` : ""}`, h("button", { title: "Stop following (Esc)", onclick: () => store.set({ sample: null }) }, icon("close")))
       : null,
   );
-  const notices = s.meta?.notices?.length || 0;
-  $("notices-btn").classList.toggle("hidden", !notices && s.meta?.status !== "error");
-  $("notices-btn").title = `${notices} notice(s)`;
+  renderNotices();
 }
 
 function renderNav() {
   const s = store.get();
-  const items = [];
-  let insights = false;
-  for (const [key, page] of Object.entries(PAGES)) {
-    if (page.available && !page.available(s)) continue;
-    if (page.insight && !insights) {
-      items.push(h("span", { class: "sep" }), h("span", { class: "faint", style: { fontSize: "11px", marginRight: "2px" } }, "Insights"));
-      insights = true;
-    }
-    if (key === "explore") items.push(h("span", { class: "sep" }));
-    items.push(h("button", { class: `${s.page === key ? "on" : ""} ${page.insight ? "sub" : ""}`, onclick: () => store.set({ page: key }) }, page.label));
+  const pages = visiblePages(s);
+  clear(
+    $("nav"),
+    pages.flatMap((key, i) => [
+      key === "explore" ? h("span", { class: "gap" }) : null,
+      h("button", { class: s.page === key ? "on" : "", title: `${PAGES[key].what}  (${i + 1})`, "aria-current": s.page === key ? "page" : null, onclick: () => openPage(key) }, PAGES[key].label),
+    ]),
+  );
+}
+
+function openPage(key) {
+  if (key !== store.get().page) store.set({ page: key });
+}
+
+/** Second level: the views of the current page, what the page answers, and its keys. */
+function renderSubnav() {
+  const s = store.get();
+  const node = $("subnav");
+  if (s.page === "explore") return clear(node);
+  const views = (entries, current, pick) =>
+    h(
+      "div",
+      { class: "views", role: "tablist" },
+      entries.map(([key, label]) => h("button", { class: key === current ? "on" : "", role: "tab", "aria-selected": key === current, onclick: () => key !== current && pick(key) }, label)),
+    );
+  const keys = (...pairs) => h("div", { class: "keys" }, pairs.map(([k, what]) => h("span", {}, k.split(" ").map((x) => h("kbd", {}, x)), what)));
+  if (s.page === "replay") {
+    return clear(
+      node,
+      views(Object.entries(REPLAY_VIEWS).map(([k, v]) => [k, v.label]), s.replayView, switchReplayView),
+      keys(["space", "play"], ["← →", "step"], ["[ ]", "sample"]),
+    );
   }
-  clear($("nav"), items);
+  if (s.page === "insights") {
+    const current = currentInsight(s);
+    return clear(
+      node,
+      views(availableInsights(s).map((k) => [k, INSIGHTS[k].label]), current, (k) => store.set({ insight: k })),
+      current ? h("span", { class: "what" }, INSIGHTS[current].what) : null,
+    );
+  }
+  clear(node, h("span", { class: "what", style: { marginLeft: 0 } }, PAGES[s.page]?.what));
+}
+
+/** Switch 2D ⇄ 3D at the same moment of the recording. */
+function switchReplayView(view) {
+  const event = store.get().replayView === "3d" ? scene3dPosition() : replayPosition();
+  store.set({ replayView: view, replayFocus: event ? { batch: event.batch, kind: event.kind, call: event.call?.id } : null });
 }
 
 function renderPage() {
@@ -176,15 +244,20 @@ function renderPage() {
   const explore = s.page === "explore";
   $("explore").classList.toggle("hidden", !explore);
   $("page").classList.toggle("hidden", explore);
-  if (s.page !== "replay") stopReplay();
-  if (s.page !== "scene3d") stopScene3d();
+  if (s.page !== "replay" || s.replayView !== "2d") stopReplay();
+  if (s.page !== "replay" || s.replayView !== "3d") stopScene3d();
   if (explore) {
     clear($("page"));
     for (const view of ["header", "phasebar", "left", "tabs", "center", "inspector"]) RENDER[view]();
     return;
   }
-  const page = PAGES[s.page] || PAGES.replay;
-  page.render($("page"));
+  const page = PAGES[s.page] ? s.page : "replay";
+  if (page === "replay") return (REPLAY_VIEWS[s.replayView] || REPLAY_VIEWS["2d"]).render($("page"));
+  if (page === "insights") {
+    const insight = currentInsight(s);
+    return insight ? INSIGHTS[insight].render($("page")) : clear($("page"), h("div", { class: "loading" }, "loading…"));
+  }
+  PAGES[page].render($("page"));
 }
 
 function renderPhasebar() {
@@ -237,8 +310,9 @@ function renderLeft() {
 const EXPLORE_VIEWS = new Set(["header", "phasebar", "left", "tabs", "center", "inspector"]);
 const DEPENDS = {
   nav: ["page", "allBatches", "steps", "meta", "runs"],
+  subnav: ["page", "replayView", "insight", "allBatches", "meta"],
   runselect: ["runs", "runId", "meta"],
-  page: ["page", "allBatches", "meta", "steps", "sample", "batchIndex", "runId"],
+  page: ["page", "replayView", "insight", "allBatches", "meta", "steps", "sample", "batchIndex", "runId"],
   header: ["runs", "runId", "mode", "batchIndex", "stepIndex", "steps", "meta", "sample", "batch"],
   phasebar: ["batch", "mode", "stepBatches"],
   left: ["batch", "mode", "filter", "kinds", "hidden", "expanded", "selection", "stepBatches", "steps", "stepIndex"],
@@ -248,6 +322,7 @@ const DEPENDS = {
 };
 const RENDER = {
   nav: renderNav,
+  subnav: renderSubnav,
   runselect: renderRunSelect,
   page: () => store.get().page !== "explore" && renderPage(),
   header: renderHeader,
@@ -301,14 +376,25 @@ function bindStatic() {
     });
   }
   $("tree-search").addEventListener("input", debounce((e) => store.set({ filter: e.target.value.trim() }), 120));
+  $("theme-btn").append(icon("theme"));
   $("theme-btn").addEventListener("click", toggleTheme);
-  $("notices-btn").addEventListener("click", () => store.set({ page: "explore", tab: "overview" }));
+  $("help-btn").append(icon("keys"));
+  $("help-btn").addEventListener("click", showShortcuts);
+  $("notices-btn").addEventListener("click", () => store.set({ page: "explore", mode: "batch", tab: "overview" }));
+  $("hidden-btn").append(icon("hide"));
   $("hidden-btn").addEventListener("click", showHiddenDialog);
   document.addEventListener("keydown", (e) => {
-    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement || e.metaKey || e.ctrlKey) return;
+    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (document.querySelector(".modal-back")) {
+      if (e.key === "Escape") document.querySelector(".modal-back").remove();
+      return;
+    }
     const s = store.get();
-    if (s.page === "replay" && replayKey(e)) return;
-    if (s.page === "scene3d" && scene3dKey(e)) return;
+    const pages = visiblePages(s);
+    if (/^[1-9]$/.test(e.key) && pages[Number(e.key) - 1]) return openPage(pages[Number(e.key) - 1]);
+    if (e.key === "?") return showShortcuts();
+    if (s.page === "replay" && s.replayView === "3d" && scene3dKey(e)) return;
+    if (s.page === "replay" && s.replayView !== "3d" && replayKey(e)) return;
     if (s.page !== "explore") return;
     const count = s.mode === "batch" ? s.meta?.batches_captured || 0 : s.steps.length;
     const current = s.mode === "batch" ? s.batchIndex : s.stepIndex;
@@ -348,7 +434,47 @@ function showHiddenDialog() {
       ),
     ),
   );
-  back.append(h("div", { class: "modal" }, h("h3", {}, "Hidden calls"), list.length ? list : h("div", { class: "faint" }, "Nothing hidden. Use ⊘ on a row in the call tree to hide calls like it; their children stay visible."), h("div", { style: { marginTop: "14px", textAlign: "right" } }, h("button", { class: "chip", onclick: close }, "Close"))));
+  back.append(
+    h(
+      "div",
+      { class: "modal" },
+      h("h3", {}, "Hidden calls"),
+      list.length ? list : h("div", { class: "faint" }, "Nothing hidden. Hover a row in the call tree and use its hide button to hide calls like it; their children stay visible."),
+      h("div", { class: "actions" }, h("button", { class: "chip", onclick: close }, "Close")),
+    ),
+  );
+  document.body.append(back);
+}
+
+function showShortcuts() {
+  if (document.querySelector(".modal-back")) return;
+  const s = store.get();
+  const back = h("div", { class: "modal-back", onclick: (e) => e.target === back && back.remove() });
+  const row = (keys, what) => [h("dt", {}, keys.split(" ").map((k) => h("kbd", {}, k))), h("dd", {}, what)];
+  back.append(
+    h(
+      "div",
+      { class: "modal" },
+      h("h3", {}, "Keyboard"),
+      h(
+        "dl",
+        { class: "shortcuts" },
+        h("h4", {}, "Anywhere"),
+        visiblePages(s).map((key, i) => row(String(i + 1), PAGES[key].label)),
+        row("?", "this list"),
+        h("h4", {}, "Replay"),
+        row("space", "play / pause"),
+        row("← →", "previous / next stop"),
+        row("shift ← →", "previous / next phase"),
+        row("[ ]", "previous / next sample"),
+        h("h4", {}, "Trace"),
+        row("j k", "next / previous batch or step"),
+        row("/", "filter the call tree"),
+        row("esc", "stop following a sample"),
+      ),
+      h("div", { class: "actions" }, h("button", { class: "chip", onclick: () => back.remove() }, "Close")),
+    ),
+  );
   document.body.append(back);
 }
 
@@ -384,13 +510,29 @@ function toggleTheme() {
 function readHash() {
   const params = new URLSearchParams(location.hash.slice(1));
   const int = (k) => (params.has(k) ? Number(params.get(k)) : undefined);
-  return { run: params.get("run"), page: params.get("page"), mode: params.get("mode"), b: int("b"), s: int("s"), call: int("call"), sample: int("sample"), tab: params.get("tab") };
+  const legacy = LEGACY_PAGES[params.get("page")] || {};
+  return {
+    run: params.get("run"),
+    page: legacy.page || params.get("page"),
+    view: legacy.replayView || params.get("view"),
+    insight: legacy.insight || params.get("insight"),
+    mode: params.get("mode"),
+    b: int("b"),
+    s: int("s"),
+    call: int("call"),
+    sample: int("sample"),
+    tab: params.get("tab"),
+  };
 }
 
 const writeHash = debounce(() => {
   const s = store.get();
   if (!s.runId) return;
-  const params = new URLSearchParams({ run: s.runId, page: s.page, mode: s.mode, tab: s.tab });
+  const params = new URLSearchParams({ run: s.runId, page: s.page });
+  if (s.page === "replay") params.set("view", s.replayView);
+  if (s.page === "insights" && currentInsight(s)) params.set("insight", currentInsight(s));
+  params.set("mode", s.mode);
+  params.set("tab", s.tab);
   if (s.mode === "batch") params.set("b", s.batchIndex);
   else params.set("s", s.stepIndex);
   if (s.selection?.call != null) params.set("call", s.selection.call);

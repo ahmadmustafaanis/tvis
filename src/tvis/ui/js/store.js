@@ -5,7 +5,9 @@ const state = {
   runId: null,
   meta: null,
   steps: [],
-  page: "replay", // replay | loss | weights | attention | gradcam | embeddings | explore
+  page: "replay", // replay | insights | loss | weights | explore (shown as "Trace")
+  replayView: "2d", // replay drawn as the layer stack ("2d") or the 3D tunnel ("3d")
+  insight: null, // insights view: attention | gradcam | embeddings (null: the first available)
   mode: "batch", // "batch" | "step"
   batchIndex: 0,
   stepIndex: 0,

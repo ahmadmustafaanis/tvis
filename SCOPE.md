@@ -174,6 +174,10 @@ and hand back the localhost link.
 
 ## v1.1: Replay, Loss, Weights, Insights
 
+Navigation follows a training step: Replay (layer stack | 3D) · Insights · Loss · Weights · Trace
+(the v1 Explore debugger), keys 1–5. Old `page=` links (scene3d, attention, gradcam, embeddings)
+still resolve.
+
 - **Replay** page (default): transport (play/pause/step/phase jump/speed), granularity
   (layer · every call · phase · batch), followed sample, model stack with activation → gradient
   thumbnails, per-event detail.

@@ -54,8 +54,11 @@ src/tvis/
     targets.py        host:path / saved targets / ssh command construction
     server.py         127.0.0.1 HTTP server
   ui/                 static browser UI: index.html, style.css, js/*.js (ES modules, no build)
-                      pages: replay, loss, weights, attention, gradcam, embeddings, explore (the
-                      original debugger: tree/inspector/samples/timeline/source/layers/step)
+                      pages, in training order (keys 1–5): Replay (layer stack | 3D) · Insights
+                      (attention | gradcam | embeddings) · Loss · Weights · Trace (internal key
+                      "explore": tree/inspector/samples/timeline/source/layers/step).
+                      transport.js = playback controls shared by Replay and 3D. Chrome is neutral;
+                      hue only for data, via the --ph-* phase tokens.
 tests/                capture/ (torch), store/ + viewer/ (no torch), e2e/ (subprocesses, slow)
 examples/             image_classifier/ and text_lm/: runnable scripts used by e2e tests
 ```
