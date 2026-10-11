@@ -26,6 +26,13 @@ optimizer steps end to end (raw input → data pipeline → every module/functio
 gradients → optimizer update, with GPU-accurate timings), writes a run directory, and exits.
 `tvis open host:path` serves a browser UI on the laptop that reads runs locally or over SSH stdio.
 
+## Helping a user debug their training
+
+Follow [.claude/skills/run-tvis/SKILL.md](.claude/skills/run-tvis/SKILL.md). Its driver,
+`.claude/skills/run-tvis/tvis_debug.py`, reads a recording as text (summary, health checks for
+common training bugs, layers, params, samples, data, calls, tensors, source, timing, before/after
+compare, viewer screenshots) locally or over SSH. `smoke.sh` there tests it against injected bugs.
+
 ## Layout
 
 ```
