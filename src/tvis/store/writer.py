@@ -22,8 +22,10 @@ from tvis.store import schema
 def write_json_atomic(path: Path, document: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f".{path.name}.tmp")
+    # dumps + one write: json.dump streams many small chunks through iterencode and is ~4x slower
+    text = json.dumps(document, separators=(",", ":"), allow_nan=False, default=_json_default)
     with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(document, f, separators=(",", ":"), allow_nan=False, default=_json_default)
+        f.write(text)
     os.replace(tmp, path)
 
 
