@@ -43,9 +43,22 @@
   --code-com: #6b6b73;
   --code-fn: #aa9df4;
 
+  /* the 3D viewport is dark in both themes, so it has its own tokens (read by scene3d.js) */
   --viewport-3d: #070708;
   --viewport-3d-text: #9a9aa2;
-  --viewport-3d-chip: rgba(7, 7, 8, 0.72);
+  --viewport-3d-chip: rgba(18, 18, 20, 0.72);
+  --viewport-3d-chip-border: rgba(255, 255, 255, 0.06);
+  --viewport-3d-slab: #18181b;
+  --viewport-3d-slab-face: #222226;
+  --viewport-3d-edge: #34343a;
+  --viewport-3d-link: #26262b;
+  --viewport-3d-label: #74747c;
+  --viewport-3d-label-strong: #ededef;
+  --viewport-3d-forward: #e59656;
+  --viewport-3d-backward: #6eaff7;
+  --viewport-3d-optimizer: #58c38f;
+  --viewport-3d-good: #5ec386;
+  --viewport-3d-bad: #ef6661;
 
   --font: system-ui, -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
@@ -427,7 +440,13 @@ td.good { color: var(--good); }
 .readout { font-family: var(--mono); font-size: 11px; color: var(--text-muted); min-height: 16px; margin-top: 4px; }
 .dims { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
 .dims label { display: grid; grid-template-columns: 54px 1fr 40px; gap: 6px; align-items: center; font-size: 11px; color: var(--text-muted); }
-input[type=range] { accent-color: var(--text); }
+/* range: a hairline track and a small solid thumb, the same everywhere */
+input[type=range] { -webkit-appearance: none; appearance: none; background: transparent; height: 16px; margin: 0; cursor: pointer; }
+input[type=range]::-webkit-slider-runnable-track { height: 2px; border-radius: 1px; background: var(--border-strong); }
+input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; margin-top: -5px; border-radius: 50%; background: var(--text); border: 0; transition: transform 0.15s var(--ease); }
+input[type=range]:hover::-webkit-slider-thumb { transform: scale(1.15); }
+input[type=range]::-moz-range-track { height: 2px; border-radius: 1px; background: var(--border-strong); }
+input[type=range]::-moz-range-thumb { width: 12px; height: 12px; border-radius: 50%; background: var(--text); border: 0; }
 .dims input[type=range] { width: 100%; }
 .value-text { font-family: var(--mono); font-size: 12px; white-space: pre-wrap; word-break: break-word; background: var(--bg-elev-2); border-radius: var(--radius-sm); padding: 8px 10px; margin-bottom: 8px; }
 .err { color: var(--bad); font-size: 12px; }
@@ -503,7 +522,7 @@ input[type=range] { accent-color: var(--text); }
 /* ---------- replay + 3D transport ---------- */
 .replay { display: grid; grid-template-rows: auto minmax(0, 1fr); height: 100%; min-height: 0; }
 .transport { display: flex; flex-direction: column; gap: 12px; padding: 10px 16px 14px; border-bottom: 1px solid var(--border); }
-.transport-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; min-width: 0; }
+.transport-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; min-width: 0; }
 .transport-row .rule { width: 1px; height: 18px; background: var(--border-strong); }
 .transport-row .grow { flex: 1; }
 .buttons { display: flex; align-items: center; gap: 2px; }
@@ -543,6 +562,7 @@ input[type=range] { accent-color: var(--text); }
 
 .sample-nav { display: inline-flex; align-items: center; gap: 2px; }
 .sample-nav b { font: 500 12px var(--mono); min-width: 26px; text-align: center; color: var(--text); }
+.sample-nav .stored { font: 11px var(--mono); color: var(--text-faint); margin-left: 4px; cursor: help; }
 .sample-nav button { border: 0; background: transparent; border-radius: var(--radius-sm); color: var(--text-muted); width: 22px; height: 22px; display: grid; place-items: center; }
 .sample-nav button:hover { background: var(--bg-hover); color: var(--text); }
 
@@ -667,12 +687,22 @@ table.raw tr th:first-child { position: sticky; left: 0; background: var(--bg-el
 .s3-body { display: grid; grid-template-columns: minmax(0, 1fr) auto; min-height: 0; }
 .s3-viewport { position: relative; min-height: 0; overflow: hidden; background: var(--viewport-3d); }
 .s3-viewport canvas { display: block; width: 100%; height: 100%; cursor: grab; }
-.s3-hud { position: absolute; left: 14px; right: 14px; top: 10px; color: var(--viewport-3d-text); font-size: 12px; pointer-events: none; }
-.s3-panel { width: min(420px, 40vw); overflow: auto; border-left: 1px solid var(--border); background: var(--bg); padding: 16px 18px 30px; }
+.s3-hud { position: absolute; left: 16px; right: 16px; top: 14px; display: flex; justify-content: space-between; gap: 16px; font-size: 12px; pointer-events: none; }
+.s3-hud .status { color: var(--viewport-3d-label-strong); font-variant-numeric: tabular-nums; }
+.s3-hud .hint { color: var(--viewport-3d-label); transition: opacity 0.6s var(--ease); }
+.s3-hud .hint.gone { opacity: 0; }
+.s3-panel { width: min(420px, 40vw); overflow: auto; border-left: 1px solid var(--border); background: var(--bg); padding: 20px 24px 40px; }
 .s3-panel .panel-title { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
-.s3-panel .panel-title h2 { flex: 1; margin: 0; font-size: 16px; font-weight: 600; }
-.s3-track-wrap { position: absolute; left: 50%; transform: translateX(-50%); bottom: 14px; width: min(560px, 80%); display: flex; align-items: center; gap: 10px; color: var(--viewport-3d-text); font-size: 11px; background: var(--viewport-3d-chip); padding: 6px 12px; border-radius: 999px; }
-.s3-track { flex: 1; accent-color: var(--ph-forward); }
+.s3-panel .panel-title h2 { flex: 1; margin: 0; font-size: 17px; font-weight: 600; letter-spacing: -0.02em; }
+.s3-track-wrap {
+  position: absolute; left: 50%; transform: translateX(-50%); bottom: 16px; width: min(480px, 80%); display: flex; align-items: center; gap: 12px;
+  color: var(--viewport-3d-label); font-size: 11px; background: var(--viewport-3d-chip); padding: 6px 14px; border-radius: 999px;
+  border: 1px solid var(--viewport-3d-chip-border); backdrop-filter: blur(10px);
+}
+.s3-track { flex: 1; }
+.s3-track::-webkit-slider-runnable-track { background: var(--viewport-3d-edge); }
+.s3-track::-webkit-slider-thumb { background: var(--viewport-3d-label-strong); }
+.s3-track::-moz-range-track { background: var(--viewport-3d-edge); }
 
 @media (max-width: 980px) {
   body { overflow: auto; }

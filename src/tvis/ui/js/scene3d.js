@@ -11,32 +11,50 @@ import { followableSamples, imageInput, index, lossValue, patchGrid, sampleShape
 import { buildEvents, layerCalls } from "./replay.js";
 import { store } from "./store.js";
 import { buildTransport, phaseJump } from "./transport.js";
-import { clear, decodeBytes, decodeFloat32, fmtNum, h, icon } from "./util.js";
+import { clear, cssVar, decodeBytes, decodeFloat32, fmtNum, h, icon } from "./util.js";
 
 const GRANULARITIES = [
   ["layer", "Layer"],
   ["phase", "Phase"],
   ["batch", "Batch"],
 ];
-const BG = 0x08080a; // --viewport-3d
-const WARM = [
-  [0, 0, 0],
-  [120, 20, 10],
-  [235, 90, 20],
-  [255, 190, 60],
-  [255, 250, 220],
-];
-const COOL = [
-  [0, 0, 0],
-  [10, 40, 120],
-  [30, 130, 235],
-  [120, 220, 255],
-  [235, 250, 255],
-];
-
 const VIEW_DIR = new THREE.Vector3(-5.5, 3.2, 8.5).normalize();
 const OVERVIEW_DIR = new THREE.Vector3(-0.12, 0.32, 1).normalize(); // near-frontal: the whole tunnel reads left to right
-const FOLLOW_DISTANCE = 11; // at a 16:9 view; narrower views back off so the same span stays visible
+const FOV = 36; // narrow enough that near slabs don't balloon and far ones don't vanish
+const FOLLOW_DISTANCE = 15; // at a 16:9 view; narrower views back off so the same span stays visible
+const LABEL_PX = 12; // labels keep one on-screen size, like the rest of the UI
+
+/** Scene colours, from the --viewport-3d-* tokens (the viewport is dark in both themes). */
+let C = null;
+function colours() {
+  const v = (name) => cssVar(`--viewport-3d${name}`);
+  const hex = (name) => new THREE.Color(v(name));
+  const forward = hex("-forward");
+  const backward = hex("-backward");
+  // activation ramps: black → the phase colour → near white, so brightness reads as magnitude
+  const rampOf = (c) => {
+    const white = new THREE.Color(1, 1, 1);
+    return [new THREE.Color(0, 0, 0), c.clone().multiplyScalar(0.4), c.clone(), c.clone().lerp(white, 0.45), c.clone().lerp(white, 0.8)].map((x) => [x.r * 255, x.g * 255, x.b * 255]);
+  };
+  return {
+    bg: hex(""),
+    slab: hex("-slab"),
+    face: hex("-slab-face"),
+    edge: hex("-edge"),
+    link: hex("-link"),
+    forward,
+    backward,
+    optimizer: hex("-optimizer"),
+    text: v("-text"),
+    label: v("-label"),
+    labelStrong: v("-label-strong"),
+    good: v("-good"),
+    bad: v("-bad"),
+    warm: rampOf(forward),
+    cool: rampOf(backward),
+    font: cssVar("--font") || "system-ui, sans-serif",
+  };
+}
 const LOOK_AHEAD = 3.2; // look past the active slab so what comes next is on screen
 
 const S = {
@@ -240,27 +258,22 @@ function slabSize(info) {
 function initThree() {
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
   renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
-  renderer.setClearColor(BG);
+  C = colours();
+  renderer.setClearColor(C.bg);
   const scene = new THREE.Scene();
-  scene.fog = new THREE.FogExp2(BG, 0.022);
-  const camera = new THREE.PerspectiveCamera(48, 1, 0.1, 600);
+  scene.fog = new THREE.FogExp2(C.bg, 0.02);
+  const camera = new THREE.PerspectiveCamera(FOV, 1, 0.1, 600);
   camera.position.set(-6, 4, 11);
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
   controls.addEventListener("start", () => {
     if (S.follow) setFollow(false);
+    dismissHint();
   });
   scene.add(new THREE.AmbientLight(0xffffff, 0.55));
   const key = new THREE.DirectionalLight(0xffffff, 1.1);
   key.position.set(-4, 10, 8);
   scene.add(key);
-  const floor = new THREE.Mesh(
-    new THREE.PlaneGeometry(800, 60),
-    new THREE.MeshStandardMaterial({ color: 0x0b0e14, roughness: 0.35, metalness: 0.6 }),
-  );
-  floor.rotation.x = -Math.PI / 2;
-  floor.position.y = -3.2;
-  scene.add(floor);
   const world = new THREE.Group();
   scene.add(world);
   S.three = { renderer, scene, camera, controls, world, clock: new THREE.Clock(), raf: null, target: new THREE.Vector3(), flashUntil: 0, distance: FOLLOW_DISTANCE, viewDir: VIEW_DIR };
@@ -289,6 +302,18 @@ function resize() {
   renderer.setSize(rect.width, rect.height);
   camera.aspect = rect.width / rect.height;
   camera.updateProjectionMatrix();
+  sizeLabels();
+}
+
+/** Sprites without size attenuation are measured at distance 1: convert pixels to that scale. */
+function sizeLabels() {
+  const height = S.dom?.viewport.getBoundingClientRect().height;
+  if (!height || !S.graph?.labels) return;
+  const perPixel = (2 * Math.tan((FOV * Math.PI) / 360)) / height;
+  for (const label of S.graph.labels) {
+    const h = label.userData.px * LABEL_CANVAS_RATIO * perPixel;
+    label.scale.set(h * (512 / 96), h, 1);
+  }
 }
 
 function disposeWorld() {
@@ -305,25 +330,29 @@ function buildWorld(graph, sample) {
   const { world } = S.three;
   let x = 0;
   const gap = 1.4;
+  graph.labels = [];
   for (const node of graph.nodes) {
     node.info = nodeShape(graph.batch, node);
     node.size = slabSize(node.info);
     x += node.size.t / 2;
     node.x = x;
     x += node.size.t / 2 + gap;
-    const side = new THREE.MeshStandardMaterial({ color: 0x1c2533, transparent: true, opacity: 0.35, roughness: 0.2, metalness: 0.4 });
+    const side = new THREE.MeshStandardMaterial({ color: C.slab, transparent: true, opacity: 0.55, roughness: 0.6, metalness: 0.1 });
     const face = new THREE.MeshStandardMaterial({ color: 0xffffff, transparent: true, opacity: 0.18, emissive: 0xffffff, emissiveIntensity: 0, roughness: 0.4 });
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(node.size.t, node.size.h, node.size.w), [face, face, side, side, side, side]);
     mesh.position.set(node.x, 0, 0);
     mesh.userData.node = node;
-    const edges = new THREE.LineSegments(new THREE.EdgesGeometry(mesh.geometry), new THREE.LineBasicMaterial({ color: 0x5b6b85, transparent: true, opacity: 0.6 }));
+    const edges = new THREE.LineSegments(new THREE.EdgesGeometry(mesh.geometry), new THREE.LineBasicMaterial({ color: C.edge, transparent: true, opacity: 0.9 }));
     mesh.add(edges);
     node.mesh = mesh;
     node.face = face;
     node.edgeLines = edges;
     world.add(mesh);
-    const label = textSprite(node.unit ? `${node.call.name} ▸` : node.call.name, node.unit ? "#ffcf8a" : "#aeb8c8");
-    label.position.set(node.x, -node.size.h / 2 - 0.45, 0);
+    const label = textSprite(node.unit ? `${node.call.name} ▸` : node.call.name, C.label);
+    label.center.set(0.5, 1); // hang below the slab
+    label.position.set(node.x, -node.size.h / 2 - 0.3, node.size.w / 2); // under the near edge, clear of the outline
+    node.label = label;
+    graph.labels.push(label);
     world.add(label);
   }
   graph.length = x;
@@ -332,8 +361,9 @@ function buildWorld(graph, sample) {
   graph.input.rotation.y = Math.PI / 2;
   graph.input.position.set(-3, 0, 0);
   world.add(graph.input);
-  graph.output = textSprite("", "#ffffff", 0.8);
+  graph.output = textSprite("", C.labelStrong, 15);
   graph.output.position.set(x + 1.6, 1.2, 0);
+  graph.labels.push(graph.output);
   world.add(graph.output);
   // edges: straight to the next slab, arcs for skips (residual-style dataflow)
   for (const edge of graph.edges) {
@@ -345,7 +375,7 @@ function buildWorld(graph, sample) {
         ? new THREE.QuadraticBezierCurve3(a.clone().setY(0.4), new THREE.Vector3((a.x + b.x) / 2, 1.2 + 0.35 * Math.min(skip, 8), 0), b.clone().setY(0.4))
         : new THREE.LineCurve3(a, b);
     edge.curve = curve;
-    const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(curve.getPoints(skip > 1 ? 40 : 2)), new THREE.LineBasicMaterial({ color: skip > 1 ? 0x4a5a78 : 0x34405a, transparent: true, opacity: edge.inferred ? 0.25 : 0.7 }));
+    const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(curve.getPoints(skip > 1 ? 40 : 2)), new THREE.LineBasicMaterial({ color: skip > 1 ? C.edge : C.link, transparent: true, opacity: edge.inferred ? 0.35 : 1 }));
     world.add(line);
   }
   graph.inputCurve = graph.nodes.length ? new THREE.LineCurve3(new THREE.Vector3(-3, 0, 0), new THREE.Vector3(graph.nodes[0].x - graph.nodes[0].size.t / 2, 0, 0)) : null;
@@ -353,19 +383,27 @@ function buildWorld(graph, sample) {
   const count = 360;
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(count * 3), 3));
-  const material = new THREE.PointsMaterial({ size: 0.11, color: 0xff9a3c, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false });
+  const material = new THREE.PointsMaterial({ size: 0.08, color: C.forward, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false });
   graph.particles = new THREE.Points(geometry, material);
   graph.particles.userData = { curves: [], reverse: false, seeds: Float32Array.from({ length: count }, () => Math.random()), jitter: Float32Array.from({ length: count * 2 }, () => (Math.random() - 0.5) * 0.35) };
   world.add(graph.particles);
   loadInputImage(graph, sample);
+  sizeLabels();
 }
 
-function textSprite(text, color, scale = 0.7) {
+const LABEL_CANVAS_RATIO = 96 / 34; // canvas height over the main line's font size
+
+/** A label that keeps `px` on-screen pixels for its main line however far away it is. */
+function textSprite(text, color, px = LABEL_PX) {
   const canvas = document.createElement("canvas");
   canvas.width = 512;
   canvas.height = 96;
-  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas), transparent: true, depthWrite: false }));
-  sprite.scale.set(scale * 5.3, scale, 1);
+  const map = new THREE.CanvasTexture(canvas);
+  map.colorSpace = THREE.SRGBColorSpace;
+  map.anisotropy = 4;
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map, transparent: true, depthWrite: false, depthTest: false, sizeAttenuation: false }));
+  sprite.userData.px = px;
+  sprite.renderOrder = 10; // labels draw over the slabs instead of being cut by them
   // optional second, dimmer line; both lines shrink to fit the canvas instead of being clipped
   sprite.userData.setText = (t, c = color, sub = "") => {
     const ctx = canvas.getContext("2d");
@@ -373,17 +411,17 @@ function textSprite(text, color, scale = 0.7) {
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     const line = (str, size, weight, y, fill) => {
-      ctx.font = `${weight} ${size}px -apple-system, Inter, Segoe UI, sans-serif`;
+      ctx.font = `${weight} ${size}px ${C.font}`;
       const fit = Math.min(size, (size * 496) / Math.max(1, ctx.measureText(str).width));
-      ctx.font = `${weight} ${fit}px -apple-system, Inter, Segoe UI, sans-serif`;
+      ctx.font = `${weight} ${fit}px ${C.font}`;
       ctx.fillStyle = fill;
       ctx.fillText(str, 256, y);
     };
     const main = t.length > 30 ? `${t.slice(0, 29)}…` : t;
     if (sub) {
       line(main, 34, 500, 30, c);
-      line(sub, 26, 400, 72, "#8b95a7");
-    } else line(main, 40, 500, 48, c);
+      line(sub, 26, 400, 70, C.label);
+    } else line(main, 34, 500, 30, c);
     sprite.material.map.needsUpdate = true;
   };
   sprite.userData.setText(text);
@@ -422,9 +460,9 @@ function textCanvas(text) {
   canvas.width = 256;
   canvas.height = 256;
   const ctx = canvas.getContext("2d");
-  ctx.fillStyle = "#11161f";
+  ctx.fillStyle = `#${C.face.getHexString()}`;
   ctx.fillRect(0, 0, 256, 256);
-  ctx.fillStyle = "#e4e7ec";
+  ctx.fillStyle = C.labelStrong;
   ctx.font = "22px ui-monospace, Menlo, monospace";
   const words = text.split(/\s+/);
   let line = "";
@@ -514,7 +552,7 @@ async function texture(node, sample, grad) {
     canvas.height = summary.rows;
     const ctx = canvas.getContext("2d");
     const img = ctx.createImageData(summary.cols, summary.rows);
-    summary.map.forEach((v, i) => img.data.set([...ramp(grad ? COOL : WARM, Math.sqrt(v / (peak || 1))), 255], i * 4));
+    summary.map.forEach((v, i) => img.data.set([...ramp(grad ? C.cool : C.warm, Math.sqrt(v / (peak || 1))), 255], i * 4));
     ctx.putImageData(img, 0, 0);
     return canvasTexture(canvas);
   })().catch(() => null);
@@ -650,7 +688,9 @@ function buildDom(container) {
     ],
   });
   const viewport = h("div", { class: "s3-viewport" });
-  const hud = h("div", { class: "s3-hud" });
+  const status = h("span", { class: "status" });
+  const hint = h("span", { class: `hint ${S.hintDismissed ? "gone" : ""}` }, "drag to orbit · scroll to zoom · shift+scroll to move along · click a slab · ▸ collapsed block");
+  const hud = h("div", { class: "s3-hud" }, status, hint);
   const track = h("input", {
     type: "range",
     class: "s3-track",
@@ -659,13 +699,18 @@ function buildDom(container) {
     step: 0.1,
     value: 0,
     title: "Scroll along the model (or swipe sideways / shift+scroll)",
-    oninput: (e) => panTo(Number(e.target.value)),
+    oninput: (e) => (panTo(Number(e.target.value)), dismissHint()),
   });
   const panel = h("div", { class: "s3-panel hidden" });
   const root = h("div", { class: "s3" }, transport.root, h("div", { class: "s3-body" }, viewport, panel), hud);
   viewport.append(hud, h("div", { class: "s3-track-wrap" }, h("span", {}, "scroll"), track));
   clear(container, root);
-  S.dom = { root, transport, viewport, hud, panel, followBtn, track };
+  S.dom = { root, transport, viewport, hud, status, hint, panel, followBtn, track };
+}
+
+function dismissHint() {
+  S.hintDismissed = true;
+  S.dom?.hint.classList.add("gone");
 }
 
 function syncControls() {
@@ -741,27 +786,32 @@ function applyEvent(event, batch, sample) {
       glow = 0.25 + 0.75 * level;
     } else if (forwardDone) {
       opacity = 0.92;
-      glow = 0.55;
+      glow = 0.3;
     }
     if (isActive) glow = 1.6;
     face.opacity = opacity;
     face.userData.baseGlow = glow;
     face.userData.active = isActive;
-    node.edgeLines.material.color.set(isActive ? (event.phase === "backward" ? 0x7cc4ff : 0xffb15c) : 0x5b6b85);
+    node.edgeLines.material.color.copy(isActive ? (event.phase === "backward" ? C.backward : C.forward) : C.edge);
+    const labelState = isActive ? "active" : forwardDone || backward ? "done" : "pending";
+    if (node.labelState !== labelState) {
+      node.labelState = labelState;
+      node.label.userData.setText(node.unit ? `${node.call.name} ▸` : node.call.name, labelState === "active" ? C.labelStrong : labelState === "done" ? C.text : C.label);
+    }
     const want = backward ? "grad" : forwardDone ? "value" : null;
     if (node.showing !== `${want}:${sample}`) {
       node.showing = `${want}:${sample}`;
       if (!want) {
         face.map = null;
         face.emissiveMap = null;
-        face.color.set(0x2a3446);
+        face.color.copy(C.face);
         face.needsUpdate = true;
       } else {
         texture(node, sample, want === "grad").then((tex) => {
           if (node.showing !== `${want}:${sample}`) return;
           face.map = tex;
           face.emissiveMap = tex;
-          face.color.set(tex ? 0xffffff : want === "grad" ? 0x2b6cb0 : 0xc2592b);
+          face.color.set(tex ? 0xffffff : want === "grad" ? C.backward : C.forward);
           face.needsUpdate = true;
         });
       }
@@ -771,7 +821,7 @@ function applyEvent(event, batch, sample) {
   const pu = graph.particles.userData;
   pu.curves = [];
   pu.reverse = false;
-  graph.particles.material.color.set(0xff9a3c);
+  graph.particles.material.color.copy(C.forward);
   if (event.kind === "data" && graph.inputCurve) pu.curves = [graph.inputCurve];
   else if (event.kind === "forward" && active) {
     pu.curves = graph.edges.filter((e) => e.to === active).map((e) => e.curve);
@@ -779,7 +829,7 @@ function applyEvent(event, batch, sample) {
   } else if (event.kind === "backward" && active) {
     pu.curves = graph.edges.filter((e) => e.from === active).map((e) => e.curve);
     pu.reverse = true;
-    graph.particles.material.color.set(0x5ab8ff);
+    graph.particles.material.color.copy(C.backward);
   } else if (event.kind === "loss" && graph.nodes.length) {
     const last = graph.nodes[graph.nodes.length - 1];
     pu.curves = [new THREE.LineCurve3(new THREE.Vector3(last.x, 0, 0), new THREE.Vector3(graph.length + 1.2, 0.8, 0))];
@@ -793,15 +843,14 @@ function applyEvent(event, batch, sample) {
     // a language model's prediction is a whole sequence: show only its last few words
     const words = p.name == null && p.text != null ? p.text.trim().split(/\s+/) : null;
     const predicted = words ? `${words.length > 4 ? "… " : ""}${words.slice(-4).join(" ")}` : `${p.name ?? p.id ?? "?"}${p.p != null ? ` ${Math.round(p.p * 100)}%` : ""}`;
-    graph.output.userData.setText(predicted, p.correct === false ? "#ff8a8a" : p.correct ? "#8af0b8" : "#ffffff", `loss ${fmtNum(s.loss, 3)}`);
+    graph.output.userData.setText(predicted, p.correct === false ? C.bad : p.correct ? C.good : C.labelStrong, `loss ${fmtNum(s.loss, 3)}`);
   } else graph.output.userData.setText("");
   if (S.follow) {
     const focus = active || (event.kind === "data" ? null : graph.nodes[graph.nodes.length - 1]);
     S.three.target.set((focus ? focus.x : -3) + LOOK_AHEAD, 0, 0);
     S.three.distance = followDistance();
   }
-  S.hudText = event.kind === "loss" ? `batch loss ${fmtNum(lossValue(batch), 4)}` : "";
-  S.dom.hud.textContent = S.hudText || "drag to orbit · scroll to zoom · swipe sideways or shift+scroll to move along · click a slab to inspect · ▸ = collapsed block";
+  S.dom.status.textContent = event.kind === "loss" ? `batch loss ${fmtNum(lossValue(batch), 4)}` : "";
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -818,10 +867,10 @@ function startLoop() {
       for (const node of S.graph.nodes) {
         const f = node.face;
         const base = f.userData.baseGlow || 0;
-        f.emissiveIntensity = f.userData.active ? base * (0.75 + 0.35 * Math.sin(t * 6)) : base;
-        if (flash) f.emissive.setRGB(0.4, 1, 0.6);
+        f.emissiveIntensity = f.userData.active ? base * (0.85 + 0.2 * Math.sin(t * 3.5)) : base;
+        if (flash) f.emissive.copy(C.optimizer);
         else f.emissive.setRGB(1, 1, 1);
-        const s = f.userData.active ? 1.06 + 0.03 * Math.sin(t * 6) : 1;
+        const s = f.userData.active ? 1.04 + 0.015 * Math.sin(t * 3.5) : 1;
         node.mesh.scale.set(1, s, s);
       }
       animateParticles(t);
@@ -912,6 +961,7 @@ function onClick(e) {
   ray.setFromCamera(pointer, S.three.camera);
   const hit = ray.intersectObjects(S.graph.nodes.map((n) => n.mesh), false)[0];
   if (!hit) return;
+  dismissHint();
   const node = hit.object.userData.node;
   if (node.unit && S.selected === node.call.id) {
     S.expanded.add(unitKey(node.call)); // second click on a collapsed block opens it up

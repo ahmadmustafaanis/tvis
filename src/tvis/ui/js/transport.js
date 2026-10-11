@@ -183,7 +183,7 @@ export function buildTransport(opts) {
       h("button", { onclick: () => opts.onSample(-1), title: "Previous sample  ([)" }, icon("left")),
       h("b", {}, `#${sample}`),
       h("button", { onclick: () => opts.onSample(1), title: "Next sample  (])" }, icon("right")),
-      limit < total ? h("span", { class: "faint", title: "Larger tensors keep only their first rows (raise --sample-rows to store more)" }, ` ${limit} of ${total} stored`) : null,
+      limit < total ? h("span", { class: "stored", title: `Activations are stored for the first ${limit} of ${total} samples (raise --sample-rows to store more)` }, `${limit}/${total}`) : null,
     );
   return T;
 }
