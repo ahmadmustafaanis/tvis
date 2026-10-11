@@ -15,6 +15,7 @@ import { renderSource } from "./source.js";
 import { renderStep } from "./step.js";
 import { loadHidden, saveHidden, store } from "./store.js";
 import { renderTimeline } from "./timeline.js";
+import { setTransportLead } from "./transport.js";
 import { renderKindFilters, renderTree } from "./tree.js";
 import { clear, debounce, fmtMs, h, icon, phaseColor } from "./util.js";
 import { renderWeights } from "./weights.js";
@@ -214,14 +215,6 @@ function renderSubnav() {
       { class: "views", role: "tablist" },
       entries.map(([key, label]) => h("button", { class: key === current ? "on" : "", role: "tab", "aria-selected": key === current, onclick: () => key !== current && pick(key) }, label)),
     );
-  const keys = (...pairs) => h("div", { class: "keys" }, pairs.map(([k, what]) => h("span", {}, k.split(" ").map((x) => h("kbd", {}, x)), what)));
-  if (s.page === "replay") {
-    return clear(
-      node,
-      views(Object.entries(REPLAY_VIEWS).map(([k, v]) => [k, v.label]), s.replayView, switchReplayView),
-      keys(["space", "play"], ["← →", "step"], ["[ ]", "sample"]),
-    );
-  }
   if (s.page === "insights") {
     const current = currentInsight(s);
     return clear(
@@ -230,7 +223,20 @@ function renderSubnav() {
       current ? h("span", { class: "what" }, INSIGHTS[current].what) : null,
     );
   }
-  clear(node, h("span", { class: "what", style: { marginLeft: 0 } }, PAGES[s.page]?.what));
+  // Replay's views live in its transport row; the other pages have one view and need no second bar.
+  clear(node);
+}
+
+/** Layer stack ⇄ 3D, rendered by the transport row of whichever view is showing. */
+function replayViewSwitch() {
+  const current = store.get().replayView;
+  return h(
+    "div",
+    { class: "seg", role: "tablist", "aria-label": "Replay view" },
+    Object.entries(REPLAY_VIEWS).map(([key, view]) =>
+      h("button", { class: key === current ? "on" : "", role: "tab", "aria-selected": key === current, onclick: () => key !== current && switchReplayView(key) }, view.label),
+    ),
+  );
 }
 
 /** Switch 2D ⇄ 3D at the same moment of the recording. */
@@ -376,6 +382,7 @@ function bindStatic() {
     });
   }
   $("tree-search").addEventListener("input", debounce((e) => store.set({ filter: e.target.value.trim() }), 120));
+  setTransportLead(replayViewSwitch);
   $("theme-btn").append(icon("theme"));
   $("theme-btn").addEventListener("click", toggleTheme);
   $("help-btn").append(icon("keys"));

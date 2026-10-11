@@ -91,11 +91,11 @@ export function renderWeights(container) {
 
 async function kernelGrid(card, ref, p, state) {
   const [out, inp, kh, kw] = p.shape;
-  const maxOut = 48;
+  const maxOut = 64;
   const maxIn = 16;
   card.append(
     h("h3", {}, `${p.name}: ${out} filters × ${inp} input channels, ${kh}×${kw} kernels`),
-    h("div", { class: "hint" }, `rows = output filters${out > maxOut ? ` (first ${maxOut})` : ""}, columns = input channels${inp > maxIn ? ` (first ${maxIn})` : ""}; one shared colour scale (blue < 0 < red)`),
+    h("div", { class: "hint" }, `columns = output filters${out > maxOut ? ` (first ${maxOut})` : ""}, rows = input channels${inp > maxIn ? ` (first ${maxIn})` : ""}; one shared colour scale (blue < 0 < red)`),
   );
   const slot = h("div", { class: "loading" }, "loading…");
   card.append(slot);
@@ -107,12 +107,14 @@ async function kernelGrid(card, ref, p, state) {
   }
   const values = decodeFloat32(data.data);
   const cmap = colorFor(data.min, data.max);
-  const rows = Math.min(out, maxOut);
-  const cols = Math.min(inp, maxIn);
-  const scale = Math.max(4, Math.floor(28 / Math.max(kh, kw)));
-  const grid = h("div", { class: "kernels", style: { gridTemplateColumns: `repeat(${cols}, ${kw * scale}px)` } });
-  for (let o = 0; o < rows; o++) {
-    for (let i = 0; i < cols; i++) {
+  // filters run along the wide axis; cells grow to fill the width, up to ~40px per kernel
+  const filters = Math.min(out, maxOut);
+  const channels = Math.min(inp, maxIn);
+  const width = card.clientWidth || 960;
+  const scale = Math.max(2, Math.min(Math.floor(40 / Math.max(kh, kw)), Math.floor((width / filters - 3) / kw)));
+  const grid = h("div", { class: "kernels", style: { gridTemplateColumns: `repeat(${filters}, ${kw * scale}px)` } });
+  for (let i = 0; i < channels; i++) {
+    for (let o = 0; o < filters; o++) {
       const canvas = h("canvas", { width: kw, height: kh, style: { width: `${kw * scale}px`, height: `${kh * scale}px` }, title: `filter ${o}, input channel ${i}` });
       const ctx = canvas.getContext("2d");
       const img = ctx.createImageData(kw, kh);
@@ -154,7 +156,7 @@ function allLayers(step, batchOf, state) {
       h("div", { class: "faint", style: { fontSize: "11px" } }, `σ ${fmtNum(meta?.stats?.std, 3)} · ‖Δw‖/‖w‖ `, h("span", { style: { color: ratioColor(p.update_ratio) } }, p.update_ratio != null ? p.update_ratio.toExponential(1) : "—")),
     );
     card.addEventListener("visible", () => {
-      drawHistogram(hist, meta?.stats?.hist, cssVar("--accent"));
+      drawHistogram(hist, meta?.stats?.hist, cssVar("--text-faint"));
       if (meta && meta.stored !== "none") {
         api("thumb", { run: state.runId, batch: ref.batch, tid: ref.tid, size: 96, layout: "matrix" })
           .then((view) => drawHeat(thumb, view))

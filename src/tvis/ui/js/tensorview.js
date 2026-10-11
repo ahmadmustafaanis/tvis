@@ -150,7 +150,7 @@ export function tensorCard(opts) {
         ? h("span", { class: "err" }, `${stats.nan} NaN · ${stats.inf} Inf`)
         : h("span", {}, h("b", {}, "n"), (stats?.numel ?? 0).toLocaleString()),
     );
-    requestAnimationFrame(() => drawHistogram(histCanvas, stats?.hist, cssVar(grad ? "--k-backward" : "--accent")));
+    requestAnimationFrame(() => drawHistogram(histCanvas, stats?.hist, cssVar(grad ? "--k-backward" : "--text-faint")));
     body.classList.toggle("hidden", !open);
     head.querySelector(".caret-indicator").textContent = open ? "▾" : "▸";
     if (open) renderBody();

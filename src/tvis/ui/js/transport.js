@@ -14,6 +14,13 @@ export const LOOP = [
 const RANK = Object.fromEntries(LOOP.map(([phase], i) => [phase, i]));
 const SPEEDS = [0.5, 1, 2, 4];
 
+// The page owns the 2D ⇄ 3D switch; it hands it over here so it sits in the transport row
+// instead of costing the page a toolbar of its own.
+let leadFactory = null;
+export function setTransportLead(factory) {
+  leadFactory = factory;
+}
+
 /**
  * opts: {granularities: [[key, label]], gran, speed, onGran(key), onSpeed(x), onRestart(), onPrev(),
  *        onToggle(), onNext(), onSeek(i), onSample(delta), extras: [Node]}
@@ -40,6 +47,7 @@ export function buildTransport(opts) {
     h(
       "div",
       { class: "transport-row" },
+      leadFactory ? [leadFactory(), h("span", { class: "rule" })] : null,
       h(
         "div",
         { class: "buttons" },

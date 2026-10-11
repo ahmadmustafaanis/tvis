@@ -106,7 +106,7 @@ function lossChart(batches, steps, selected) {
   }
   root.append(svg("polyline", { class: "series", points: values.map((p, i) => `${x(i)},${y(p.v)}`).join(" ") }));
   values.forEach((p, i) => {
-    const dot = svg("circle", { class: `pt ${p.b === selected ? "sel" : ""}`, cx: x(i), cy: y(p.v), r: p.b === selected ? 6 : 4 });
+    const dot = svg("circle", { class: `pt ${p.b === selected ? "sel" : ""}`, cx: x(i), cy: y(p.v), r: p.b === selected ? 4.5 : 3 });
     dot.addEventListener("click", () => store.set({ batchIndex: p.b }));
     tooltip(dot, `batch ${p.b} · step ${p.step} · loss ${fmtNum(p.v, 4)}`);
     root.append(dot);
@@ -207,8 +207,9 @@ function renderConfusion(slot, batches, state) {
           h("th", { style: { textAlign: "right" } }, label(t)),
           ids.map((p) => {
             const c = counts.get(`${t}:${p}`) || 0;
-            const color = t === p ? "--good" : "--bad";
-            return h("td", { style: { background: c ? `color-mix(in srgb, var(${color}) ${Math.round((c / peak) * 70) + 10}%, transparent)` : "transparent" } }, c || "");
+            // one neutral ramp for every count; the diagonal (correct) is outlined, not recoloured
+            const style = c ? { background: `color-mix(in srgb, var(--text) ${Math.round((c / peak) * 32) + 4}%, var(--bg-elev))` } : {};
+            return h("td", { class: t === p ? "diag" : "", style }, c || "");
           }),
         ),
       ),

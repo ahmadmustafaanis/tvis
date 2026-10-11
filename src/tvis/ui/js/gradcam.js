@@ -34,7 +34,7 @@ export function renderGradcam(container) {
         h("label", {}, "overlay", h("input", { type: "range", min: 0, max: 100, value: G.opacity * 100, onchange: (e) => ((G.opacity = Number(e.target.value) / 100), renderGradcam(container)) })),
       ),
       grid,
-      h("div", { class: "hint", style: { marginTop: "20px" } }, "Red = strong evidence for the class. Computed during capture with an extra gradient pass of the class score (training numerics untouched); deeper layers are coarser but more semantic. Click an image to follow it in Replay."),
+      h("div", { class: "hint", style: { marginTop: "20px" } }, "Brighter = stronger evidence for the class. Computed during capture with an extra gradient pass of the class score (training numerics untouched); deeper layers are coarser but more semantic. Click an image to follow it in Replay."),
     ),
   );
   for (const s of batch.samples || []) grid.append(camCard(batch, call, s, state));
