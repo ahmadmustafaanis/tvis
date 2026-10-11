@@ -754,6 +754,10 @@ function update() {
   S.dom.transport.setPosition(S.i);
   S.dom.transport.setSample({ sample, limit, total });
   applyEvent(event, batch, sample);
+  // an open panel tracks the active layer whenever the camera does (playing turns Follow on);
+  // clicking a slab turns Follow off, which pins the panel to it
+  const active = nodeOfEvent(event);
+  if (S.follow && S.selected != null && active) S.selected = active.call.id;
   renderPanel(batch, sample);
 }
 
@@ -984,7 +988,7 @@ function renderPanel(batch, sample) {
   const event = S.events[S.i];
   const node = S.graph.nodeOfCall.get(call.id);
   const grad = (event.phase === "backward" || event.phase === "optimizer") && node?.showing?.startsWith("grad");
-  const panelKey = `${call.id}:${sample}:${grad}`;
+  const panelKey = `${batch.index}:${call.id}:${sample}:${grad}`;
   if (panel.dataset.key === panelKey) return;
   panel.dataset.key = panelKey;
   clear(
