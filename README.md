@@ -116,6 +116,55 @@ data · forward · loss · backward · update.
 Insights views appear only when they apply: Grad-CAM needs conv layers, Attention needs attention
 softmaxes, and so on.
 
+## Debugging with an LLM agent
+
+An agent can't look at the viewer, so tvis ships a skill for coding agents:
+[`.claude/skills/run-tvis/`](.claude/skills/run-tvis/SKILL.md). It contains instructions
+(`SKILL.md`) and a command-line reader (`tvis_debug.py`). The agent records your script with
+`tvis run` and reads the recording as text. It then runs checks for common training bugs, finds
+the cause in your code, and after you approve a fix, records again and compares before and after.
+
+The checks cover NaN/Inf (and the first call that produced it), softmax applied twice, missing
+`zero_grad()` (checked exactly against the recorded gradients), layers left out of the optimizer,
+dead ReLUs, unnormalised inputs, learning rate too high, and more. Each finding says how it was
+detected and which command shows the evidence.
+
+### Install the skill
+
+From your tvis checkout (the same one you `pip install -e .`'d):
+
+```bash
+mkdir -p ~/.claude/skills && cp -r .claude/skills/run-tvis ~/.claude/skills/              # every project
+P=/path/to/your/project; mkdir -p $P/.claude/skills && cp -r .claude/skills/run-tvis $P/.claude/skills/   # or one
+```
+
+Inside the tvis repo itself, the skill is already available.
+
+### Use it
+
+**Claude Code** finds the skill by itself. Ask in your training project, for example:
+
+> My loss stops going down after a few hundred steps. Use tvis to debug `python train.py --lr 3e-4`.
+
+> Training on gpu-login gives NaN after step 2. The runs are in gpu-login:~/proj/tvis_runs.
+
+or invoke it directly with `/run-tvis`.
+
+**Other agents** (Codex, Cursor, Copilot, Gemini CLI, …) don't load Claude skills, so point them
+at the file. Add this line to your project's `AGENTS.md` (or say it in the prompt):
+
+```markdown
+To debug training, follow ~/.claude/skills/run-tvis/SKILL.md (tvis is installed; record with `tvis run`).
+```
+
+Any agent that can run shell commands can use it. The reader needs only a Python with tvis
+installed (no torch). It reads runs locally or over SSH, the same targets `tvis open` takes:
+
+```bash
+python ~/.claude/skills/run-tvis/tvis_debug.py summary tvis_runs     # overview + health findings
+python ~/.claude/skills/run-tvis/tvis_debug.py --help                # layers, params, samples, data, call, tensor, ...
+```
+
 ## Accuracy
 
 - **Observing never changes training.** Losses and parameters are bit-identical with and without
