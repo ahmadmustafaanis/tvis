@@ -94,3 +94,73 @@ def test_statistics_do_not_modify_or_require_grad_on_the_input():
 
     assert torch.equal(x.detach(), before)
     assert x.grad is None
+
+
+def _reference_stats(tensor: torch.Tensor, bins: int = HIST_BINS) -> dict:
+    """The original single-path implementation (finite mask first), kept as the oracle for the
+    finite fast path."""
+    x = tensor.detach()
+    if x.is_complex():
+        x = x.abs()
+    x = x.reshape(-1).to(torch.float32)
+    finite = torch.isfinite(x)
+    xf = x[finite]
+    stats = {
+        "numel": x.numel(),
+        "nan": int(torch.isnan(x).sum()),
+        "inf": int(torch.isinf(x).sum()),
+        "zero_frac": int((x == 0).sum()) / x.numel(),
+    }
+    lo, hi = float(xf.min()), float(xf.max())
+    counts = (
+        torch.histc(xf, bins=bins, min=lo, max=hi)
+        if lo != hi
+        else torch.zeros(bins).index_fill(0, torch.tensor([0]), xf.numel())
+    )
+    stats.update(
+        mean=float(xf.mean()),
+        std=float(xf.std(unbiased=False)),
+        min=lo,
+        max=hi,
+        abs_mean=float(xf.abs().mean()),
+        norm=float(torch.linalg.vector_norm(xf)),
+        hist={"lo": lo, "hi": hi, "counts": [int(c) for c in counts.tolist()]},
+    )
+    return stats
+
+
+def _with_non_finite(x: torch.Tensor) -> torch.Tensor:
+    x = x.clone().reshape(-1)
+    x[3], x[17], x[40] = float("nan"), float("inf"), float("-inf")
+    return x
+
+
+@pytest.mark.parametrize(
+    "tensor",
+    [
+        torch.randn(16, 8, 12, 12, generator=torch.Generator().manual_seed(0)),
+        torch.randn(4, 64, generator=torch.Generator().manual_seed(1)).relu(),
+        torch.randn(300, generator=torch.Generator().manual_seed(2)).to(torch.bfloat16),
+        torch.randint(-5, 5, (7, 9), generator=torch.Generator().manual_seed(3)),
+        torch.full((5, 5), -3.25),
+        torch.randn(64, 64, generator=torch.Generator().manual_seed(4)).t(),  # non-contiguous
+        _with_non_finite(torch.randn(100, generator=torch.Generator().manual_seed(5))),
+    ],
+    ids=["activations", "relu-zeros", "bfloat16", "int", "constant", "transposed", "non-finite"],
+)
+def test_statistics_match_reference_implementation(tensor):
+    stats, ref = tensor_stats(tensor), _reference_stats(tensor)
+
+    assert stats.keys() == ref.keys()
+    for key in ("numel", "nan", "inf", "zero_frac", "min", "max"):
+        assert stats[key] == ref[key], key
+    for key in ("mean", "std", "abs_mean", "norm"):
+        assert stats[key] == pytest.approx(ref[key], rel=1e-6, abs=1e-7), key
+    assert stats["hist"] == ref["hist"]
+
+
+def test_finite_values_whose_mean_overflows_are_not_reported_as_infinite():
+    stats = tensor_stats(torch.full((4,), 3e38))
+
+    assert stats["nan"] == 0 and stats["inf"] == 0
+    assert stats["min"] == pytest.approx(3e38) and stats["max"] == pytest.approx(3e38)

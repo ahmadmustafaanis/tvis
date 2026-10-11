@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 import torch
@@ -26,29 +27,46 @@ def tensor_stats(tensor: torch.Tensor, bins: int = HIST_BINS) -> dict[str, Any]:
     if x.is_complex():
         x = x.abs()
     x = x.reshape(-1).to(torch.float32)
+    numel = x.numel()
+
+    # NaN and ±Inf propagate through a mean, so a finite mean proves every element is finite: the
+    # moments are then taken over `x` itself, skipping the isfinite/isnan/isinf passes and the
+    # finite-only copy. Activations and gradients are almost always finite, and this path costs
+    # one device→host transfer fewer.
+    zeros = numel - torch.count_nonzero(x)
+    head = torch.cat([_moments(x), zeros.to(torch.float32).reshape(1)]).tolist()
+    if math.isfinite(head[0]):
+        stats.update(nan=0, inf=0, zero_frac=int(head[-1]) / numel)
+        return _with_moments(stats, x, head[:-1], numel, bins)
 
     finite = torch.isfinite(x)
-    n_finite = finite.sum()
-    nan = torch.isnan(x).sum()
-    inf = torch.isinf(x).sum()
-    zeros = (x == 0).sum()
-    xf = x[finite]
-    head = torch.stack([n_finite.to(torch.float32), nan.float(), inf.float(), zeros.float()]).tolist()
-    n_finite_i, nan_i, inf_i, zeros_i = (int(v) for v in head)
-    stats.update(nan=nan_i, inf=inf_i, zero_frac=zeros_i / x.numel())
-    if n_finite_i == 0:
+    counts = torch.stack(
+        [finite.sum().to(torch.float32), torch.isnan(x).sum().float(), torch.isinf(x).sum().float()]
+    ).tolist()
+    n_finite, nan, inf = (int(v) for v in counts)
+    stats.update(nan=nan, inf=inf, zero_frac=int(head[-1]) / numel)
+    if n_finite == 0:
         return {**_empty_stats(), **stats}
+    xf = x[finite]
+    return _with_moments(stats, xf, _moments(xf).tolist(), n_finite, bins)
 
-    lo, hi = xf.min(), xf.max()
-    packed = torch.stack(
-        [xf.mean(), xf.std(unbiased=False), lo, hi, xf.abs().mean(), torch.linalg.vector_norm(xf)]
+
+def _moments(x: torch.Tensor) -> torch.Tensor:
+    """[mean, std, min, max, abs_mean, norm] of a 1-D float32 tensor, still on its device."""
+    return torch.stack(
+        [x.mean(), x.std(unbiased=False), x.min(), x.max(), x.abs().mean(), torch.linalg.vector_norm(x)]
     )
-    if bool(lo == hi):
-        counts = torch.zeros(bins, dtype=torch.float32, device=xf.device)
-        counts[0] = n_finite_i
+
+
+def _with_moments(
+    stats: dict[str, Any], xf: torch.Tensor, moments: list[float], n_finite: int, bins: int
+) -> dict[str, Any]:
+    mean, std, mn, mx, abs_mean, norm = moments
+    if mn == mx:
+        counts = [0] * bins
+        counts[0] = n_finite
     else:
-        counts = torch.histc(xf, bins=bins, min=float(lo), max=float(hi))
-    mean, std, mn, mx, abs_mean, norm = packed.tolist()
+        counts = [int(c) for c in torch.histc(xf, bins=bins, min=mn, max=mx).tolist()]
     stats.update(
         mean=mean,
         std=std,
@@ -56,7 +74,7 @@ def tensor_stats(tensor: torch.Tensor, bins: int = HIST_BINS) -> dict[str, Any]:
         max=mx,
         abs_mean=abs_mean,
         norm=norm,
-        hist={"lo": mn, "hi": mx, "counts": [int(c) for c in counts.tolist()]},
+        hist={"lo": mn, "hi": mx, "counts": counts},
     )
     return stats
 
